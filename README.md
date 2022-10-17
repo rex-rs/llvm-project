@@ -42,3 +42,13 @@ chat](https://discord.gg/xS7Z362),
 
 The LLVM project has adopted a [code of conduct](https://llvm.org/docs/CodeOfConduct.html) for
 participants to all modes of communication within the project.
+
+### Build Command
+```bash
+mkdir build && cd build
+cmake -GNinja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_C_FLAGS=-pipe \
+-DCMAKE_CXX_FLAGS=-pipe -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ \
+-DLLVM_TARGETS_TO_BUILD=X86 -DLLVM_USE_LINKER=mold \
+-DLLVM_ENABLE_ASSERTIONS=ON ../llvm
+cmake --build . --verbose
+```
