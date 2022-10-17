@@ -1,3 +1,4 @@
+#include "llvm/ADT/Statistic.h"
 #include "llvm/Pass.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Module.h"
@@ -32,7 +33,7 @@ static RegisterPass<IUEntryInsertion> X("iu-entry-insertion",
         false,
         false);
 
-void IUEntryInsertion::getAnalysisUsage(AnalysisUsage &AU) {
+void IUEntryInsertion::getAnalysisUsage(AnalysisUsage &AU) const {
   // Does it alter CFG?
   // The pass will certainly add more functions to the Module...
 }
