@@ -1,6 +1,9 @@
-add_llvm_library( LLVMIU MODULE BUILDTREE_ONLY
+add_llvm_library( LLVMInnerUnikernels
   IUInsertEntry.cpp
 
-  PLUGIN_TOOL
-  opt
+  LINK_COMPONENTS
+  Analysis
+  Core
+  Support
+  TransformUtils
   )
