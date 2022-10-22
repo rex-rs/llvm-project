@@ -1,4 +1,4 @@
-add_llvm_library( LLVMInnerUnikernels
+add_llvm_component_library( LLVMInnerUnikernels
   IUInsertEntry.cpp
 
   ADDITIONAL_HEADER_DIRS
