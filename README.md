@@ -49,6 +49,6 @@ mkdir build && cd build
 cmake -GNinja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_C_FLAGS=-pipe \
 -DCMAKE_CXX_FLAGS=-pipe -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ \
 -DLLVM_TARGETS_TO_BUILD=X86 -DLLVM_USE_LINKER=mold \
--DLLVM_ENABLE_ASSERTIONS=ON ../llvm
+-DLLVM_PARALLEL_LINK_JOBS=2 -DLLVM_ENABLE_ASSERTIONS=ON ../llvm
 cmake --build . --verbose
 ```
