@@ -117,10 +117,9 @@ bool IUEntryInsertion::runOnModule(Module &M) {
 
       // prog_fn
       auto *OP1 = CS->getOperand(1);
-      auto *I = cast<ConstantExpr>(OP1)->getAsInstruction();
-      auto *BCI = cast<BitCastInst>(I);
+      auto *OP1CE = cast<ConstantExpr>(OP1);
 
-      auto *ST = BCI->getSrcTy();
+      auto *ST = OP1CE->getOperand(0)->getType();
       auto *PointeeT = cast<PointerType>(ST)->getNonOpaquePointerElementType();
 
       auto *FT = cast<FunctionType>(PointeeT);
@@ -142,9 +141,8 @@ bool IUEntryInsertion::runOnModule(Module &M) {
       // name: &'a str
       auto *OP2 = CS->getOperand(2);
       auto *OP2CE = cast<ConstantExpr>(OP2);
-      auto *GEPI = cast<GetElementPtrInst>(OP2CE->getAsInstruction());
 
-      auto *ProgNameInit = cast<GlobalVariable>(GEPI->getPointerOperand())->getInitializer();
+      auto *ProgNameInit = cast<GlobalVariable>(OP2CE->getOperand(0))->getInitializer();
       auto *ProgNameStruct = cast<ConstantStruct>(ProgNameInit);
       auto *ProgNameCda = cast<ConstantDataArray>(ProgNameStruct->getOperand(0));
       std::string ProgName(ProgNameCda->getRawDataValues().data(),
