@@ -109,7 +109,7 @@ bool IUEntryInsertion::runOnModule(Module &M) {
       std::string ProgRunName;
       switch (RTTI) {
       case BPF_PROG_TYPE_TRACEPOINT:
-        ProgRunName = "_RNvXs_NtNtCs55A4jmpZCjI_18inner_unikernel_rt10tracepoint7tp_implNtB4_10tracepointNtNtB8_9prog_type9prog_type8prog_run";
+        ProgRunName = "__iu_entry_tracepoint";
         break;
       default:
         llvm_unreachable("Unknown program type");
