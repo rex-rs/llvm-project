@@ -11,12 +11,12 @@ class Module;
 /// Pass to insert entry points for inner0unikernel programs
 class IUEntryInsertion : public PassInfoMixin<IUEntryInsertion> {
   StringSet<> Sections = {
-    "tracepoint",
+    "iu_tracepoint",
   };
 
   bool runOnModule(Module &M);
   void insertEntry(LLVMContext &, Module &, FunctionCallee &, GlobalVariable *,
-                   Type *, StringRef);
+                   Type *, StringRef, unsigned);
   void setIUFnAttr(LLVMContext &, Function *);
 
 public:
