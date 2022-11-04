@@ -35,7 +35,7 @@ STATISTIC(NumInserted,  "Number of entry function inserted");
 
 void IUEntryInsertion::insertEntry(LLVMContext &C, Module &M,
   FunctionCallee &ProgRun, GlobalVariable *ProgObj, Type *CtxPT,
-  StringRef EntryName) {
+  StringRef EntryName, unsigned ProgType) {
 
   // Argument and return type
   auto *EntryRetty = Type::getInt32Ty(C);
@@ -65,6 +65,11 @@ void IUEntryInsertion::insertEntry(LLVMContext &C, Module &M,
 
   // Return
   InstBuilder.CreateRet(ProgRunCI);
+
+  switch (ProgType) {
+  case BPF_PROG_TYPE_TRACEPOINT:
+    EntryFn->setSection("tracepoint");
+  }
 
   NumInserted++;
 }
@@ -148,7 +153,7 @@ bool IUEntryInsertion::runOnModule(Module &M) {
       std::string ProgName(ProgNameCda->getRawDataValues().data(),
                            ProgNameCda->getType()->getNumElements());
 
-      insertEntry(C, M, ProgRun, &G, CtxPT, ProgName);
+      insertEntry(C, M, ProgRun, &G, CtxPT, ProgName, RTTI);
       Changed = true;
     }
   }
