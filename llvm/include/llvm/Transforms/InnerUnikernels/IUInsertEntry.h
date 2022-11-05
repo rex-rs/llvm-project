@@ -6,22 +6,19 @@
 
 namespace llvm {
 
-class Module;
-
-/// Pass to insert entry points for inner0unikernel programs
+/// Pass to insert entry points for inner-unikernel programs
 class IUEntryInsertion : public PassInfoMixin<IUEntryInsertion> {
   StringSet<> Sections = {
     "iu_tracepoint",
   };
 
-  bool runOnModule(Module &M);
+  bool runOnModule(Module &);
   void insertEntry(LLVMContext &, Module &, FunctionCallee &, GlobalVariable *,
                    Type *, StringRef, unsigned);
   void setIUFnAttr(LLVMContext &, Function *);
 
 public:
-  /// Perform insertion on the Main module
-  PreservedAnalyses run(Module &M, ModuleAnalysisManager &AM);
+  PreservedAnalyses run(Module &, ModuleAnalysisManager &);
 
 };
 
