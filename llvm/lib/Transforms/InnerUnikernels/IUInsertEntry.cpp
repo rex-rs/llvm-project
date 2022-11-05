@@ -33,6 +33,7 @@ using namespace llvm;
 
 STATISTIC(NumInserted,  "Number of entry function inserted");
 
+/// Performs the actual insertion of the new function
 void IUEntryInsertion::insertEntry(LLVMContext &C, Module &M,
   FunctionCallee &ProgRun, GlobalVariable *ProgObj, Type *CtxPT,
   StringRef EntryName, unsigned ProgType) {
@@ -60,21 +61,28 @@ void IUEntryInsertion::insertEntry(LLVMContext &C, Module &M,
   // Construct call to prog_run
   Value *ProgRunArgs[2] = { SelfObj, EntryFn->getArg(0) };
   auto *ProgRunCI = InstBuilder.CreateCall(ProgRun.getFunctionType(),
-                                                      ProgRun.getCallee(),
-                                                      ProgRunArgs);
+                                           ProgRun.getCallee(),
+                                           ProgRunArgs);
 
   // Return
   InstBuilder.CreateRet(ProgRunCI);
 
+  // Put the function into the appropriate section
   switch (ProgType) {
   case BPF_PROG_TYPE_TRACEPOINT:
     EntryFn->setSection("tracepoint");
+    break;
+  default:
+    llvm_unreachable("unknown prog type");
   }
 
   NumInserted++;
 }
 
+/// Sets all the needed attribute for the Rust IU programs
 void IUEntryInsertion::setIUFnAttr(LLVMContext &C, Function *F) {
+
+  // SIMD extensions are not allowed in the kernel
   std::stringstream TargetFeatureSs;
   TargetFeatureSs << "-avx," << "-avx2," << "-sse," << "-sse2," << "-sse3,"
                   << "-sse4.1," << "-sse4.2," << "-crc32," << "-sse4a,"
@@ -82,6 +90,7 @@ void IUEntryInsertion::setIUFnAttr(LLVMContext &C, Function *F) {
                   << "-sse3," << "-sse4.1," << "-sse4.2," << "-crc32,"
                   << "-sse4a," << "-ssse3";
 
+  // Other needed attributes, e.g. kernel does not have redzone
   auto AS = F->getAttributes();
   AS = AS.addFnAttribute(C, Attribute::AttrKind::NoRedZone)
          .addFnAttribute(C, Attribute::AttrKind::NoUnwind)
@@ -93,15 +102,15 @@ void IUEntryInsertion::setIUFnAttr(LLVMContext &C, Function *F) {
   F->setAttributes(AS);
 }
 
+/// Entry point of the pass, it looks at all the global variables to identify
+/// the inner-unikernel program variables
 bool IUEntryInsertion::runOnModule(Module &M) {
-  bool Changed = false;
+  bool Changed = false; // Whether transformation is actually made
   auto &C = M.getContext();
 
-  // Iterate over all Global variables
+  // Traverse all Global variables
   for (auto &G: M.globals()) {
     if (G.hasSection() && Sections.contains(G.getSection())) {
-      assert(G.hasInitializer() && "It really should have an initializer");
-
       auto *Init = G.getInitializer();
       auto *CS = cast<ConstantStruct>(Init);
 
@@ -153,7 +162,10 @@ bool IUEntryInsertion::runOnModule(Module &M) {
       std::string ProgName(ProgNameCda->getRawDataValues().data(),
                            ProgNameCda->getType()->getNumElements());
 
+      // Add the function using the extracted information above
       insertEntry(C, M, ProgRun, &G, CtxPT, ProgName, RTTI);
+
+      // Transformation made
       Changed = true;
     }
   }
@@ -161,9 +173,12 @@ bool IUEntryInsertion::runOnModule(Module &M) {
   return Changed;
 }
 
+/// Wrapper for the new pass manager
 PreservedAnalyses IUEntryInsertion::run(Module &M,
                                         ModuleAnalysisManager &AM) {
+  // Run entry insertion pass
   runOnModule(M);
-  // Invalidate all analysis
+
+  // Invalidate all analysis given that new code has been added
   return PreservedAnalyses::none();
 }
