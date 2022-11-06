@@ -9,7 +9,7 @@ namespace llvm {
 /// Pass to insert entry points for inner-unikernel programs
 class IUEntryInsertion : public PassInfoMixin<IUEntryInsertion> {
   StringSet<> Sections = {
-    "iu_tracepoint",
+    "tracepoint",
   };
 
   bool runOnModule(Module &);
