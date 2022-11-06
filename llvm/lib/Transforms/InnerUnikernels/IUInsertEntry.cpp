@@ -124,6 +124,7 @@ bool IUEntryInsertion::runOnModule(Module &M) {
       switch (RTTI) {
       case BPF_PROG_TYPE_TRACEPOINT:
         ProgRunName = "__iu_entry_tracepoint";
+        G.setSection("obj_tracepoint");
         break;
       default:
         llvm_unreachable("Unknown program type");
