@@ -15,6 +15,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "llvm/Transforms/InnerUnikernels/IUInsertEntry.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
@@ -36,31 +37,29 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Transforms/InnerUnikernels/IUInsertEntry.h"
 
 #include <sstream>
 #include <string>
 
 extern "C" {
-
 #include <linux/bpf.h>
-
 }
 
 using namespace llvm;
 
 #define DEBUG_TYPE "iu-entry-insertion"
 
-STATISTIC(NumInserted,  "Number of entry function inserted");
+STATISTIC(NumInserted, "Number of entry function inserted");
 
 /// Performs the actual insertion of the new function
 Function *IUEntryInsertion::insertEntry(Module &M, FunctionCallee &ProgRun,
-  GlobalVariable *ProgObj, Type *CtxPT, StringRef Name, unsigned ProgType) {
+                                        GlobalVariable *ProgObj, Type *CtxPT,
+                                        StringRef Name, unsigned ProgType) {
   auto &C = M.getContext();
 
   // Argument and return type
   auto *EntryRetty = Type::getInt32Ty(C);
-  Type *EntryArgTys[1] = { CtxPT };
+  Type *EntryArgTys[1] = {CtxPT};
 
   // Declare the function in module
   auto *EntryTy = FunctionType::get(EntryRetty, EntryArgTys, false);
@@ -71,7 +70,7 @@ Function *IUEntryInsertion::insertEntry(Module &M, FunctionCallee &ProgRun,
   setIUFnAttr(C, EntryFn);
 
   // Construct function body, starting with entry BB
-  auto *EntryBB = BasicBlock::Create(C, "start", EntryFn);\
+  auto *EntryBB = BasicBlock::Create(C, "start", EntryFn);
   IRBuilder<> InstBuilder(EntryBB);
 
   // Bitcast away the packed attribute
@@ -79,10 +78,9 @@ Function *IUEntryInsertion::insertEntry(Module &M, FunctionCallee &ProgRun,
   auto *SelfObj = InstBuilder.CreateBitCast(ProgObj, SelfType);
 
   // Construct call to prog_run
-  Value *ProgRunArgs[2] = { SelfObj, EntryFn->getArg(0) };
+  Value *ProgRunArgs[2] = {SelfObj, EntryFn->getArg(0)};
   auto *ProgRunCI = InstBuilder.CreateCall(ProgRun.getFunctionType(),
-                                           ProgRun.getCallee(),
-                                           ProgRunArgs);
+                                           ProgRun.getCallee(), ProgRunArgs);
 
   // Return
   InstBuilder.CreateRet(ProgRunCI);
@@ -106,21 +104,36 @@ void IUEntryInsertion::setIUFnAttr(LLVMContext &C, Function *F) {
 
   // SIMD extensions are not allowed in the kernel
   std::stringstream TargetFeatureSs;
-  TargetFeatureSs << "-avx," << "-avx2," << "-sse," << "-sse2," << "-sse3,"
-                  << "-sse4.1," << "-sse4.2," << "-crc32," << "-sse4a,"
-                  << "-ssse3," << "-avx," << "-avx2," << "-sse," << "-sse2,"
-                  << "-sse3," << "-sse4.1," << "-sse4.2," << "-crc32,"
-                  << "-sse4a," << "-ssse3";
+  TargetFeatureSs << "-avx,"
+                  << "-avx2,"
+                  << "-sse,"
+                  << "-sse2,"
+                  << "-sse3,"
+                  << "-sse4.1,"
+                  << "-sse4.2,"
+                  << "-crc32,"
+                  << "-sse4a,"
+                  << "-ssse3,"
+                  << "-avx,"
+                  << "-avx2,"
+                  << "-sse,"
+                  << "-sse2,"
+                  << "-sse3,"
+                  << "-sse4.1,"
+                  << "-sse4.2,"
+                  << "-crc32,"
+                  << "-sse4a,"
+                  << "-ssse3";
 
   // Other needed attributes, e.g. kernel does not have redzone
   auto AS = F->getAttributes();
   AS = AS.addFnAttribute(C, Attribute::AttrKind::NoRedZone)
-         .addFnAttribute(C, Attribute::AttrKind::NoUnwind)
-         .addFnAttribute(C, Attribute::AttrKind::NonLazyBind)
-         .addFnAttribute(C, "probe-stack", "__rust_probestack")
-         .addFnAttribute(C, "target-cpu", "x86-64")
-         .addFnAttribute(C, "target-features", TargetFeatureSs.str())
-         .addFnAttribute(C, "tune-cpu", "generic");
+           .addFnAttribute(C, Attribute::AttrKind::NoUnwind)
+           .addFnAttribute(C, Attribute::AttrKind::NonLazyBind)
+           .addFnAttribute(C, "probe-stack", "__rust_probestack")
+           .addFnAttribute(C, "target-cpu", "x86-64")
+           .addFnAttribute(C, "target-features", TargetFeatureSs.str())
+           .addFnAttribute(C, "tune-cpu", "generic");
   F->setAttributes(AS);
 }
 
@@ -132,14 +145,9 @@ void IUEntryInsertion::setIUFnAttr(LLVMContext &C, Function *F) {
 /// See also TargetLoweringObjectFileELF::getExplicitSectionGlobal and
 /// collectUsedGlobalVariables
 void IUEntryInsertion::markUsedGlobalVariables(Module &M,
-  ArrayRef<Constant *> Vec) {
-
-  // Do nothing if Vec is empty
-  if (Vec.empty())
-    return;
-
+                                               ArrayRef<Constant *> Vec) {
   auto &C = M.getContext();
-  const std::string UsedName = "llvm.used";
+  const char *UsedName = "llvm.used";
 
   // Create initializer for @llvm.used
   auto *UsedInitElemTy = Type::getInt8Ty(C)->getPointerTo();
@@ -170,15 +178,15 @@ bool IUEntryInsertion::runOnModule(Module &M) {
   auto *Int8PtrTy = Type::getInt8Ty(C)->getPointerTo();
 
   // Traverse all Global variables
-  for (auto &G: M.globals()) {
+  for (auto &G : M.globals()) {
     if (G.hasSection() && Sections.contains(G.getSection())) {
       auto *Init = G.getInitializer();
       auto *CS = cast<ConstantStruct>(Init);
 
       // rtti
       auto *OP0 = CS->getOperand(0);
-      auto *CDA = cast<ConstantDataArray>(OP0);
-      const auto *RawRTTI = CDA->getRawDataValues().data();
+      auto *OP0Cda = cast<ConstantDataArray>(OP0);
+      const auto *RawRTTI = OP0Cda->getRawDataValues().data();
       auto RTTI = *reinterpret_cast<const int *>(RawRTTI);
 
       std::string ProgRunName;
@@ -195,16 +203,16 @@ bool IUEntryInsertion::runOnModule(Module &M) {
       auto *OP1 = CS->getOperand(1);
       auto *OP1CE = cast<ConstantExpr>(OP1);
 
-      auto *ST = OP1CE->getOperand(0)->getType();
-      auto *PointeeT = cast<PointerType>(ST)->getNonOpaquePointerElementType();
+      auto *OP1SrcTy = OP1CE->getOperand(0)->getType();
+      auto *OP1PointeeT = OP1SrcTy->getNonOpaquePointerElementType();
 
-      auto *FT = cast<FunctionType>(PointeeT);
-      auto *SelfT = FT->getParamType(0);
+      auto *ProgFuncTy = cast<FunctionType>(OP1PointeeT);
+      auto *ProgSelfTy = ProgFuncTy->getParamType(0);
 
-      SmallVector<Type *, 0> CtxTTys;
-      auto *CtxPT = StructType::create(C, CtxTTys)->getPointerTo();
+      SmallVector<Type *, 0> CtxTys;
+      auto *CtxPT = StructType::create(C, CtxTys)->getPointerTo();
 
-      Type *ProgRunArgTys[2] = { SelfT, CtxPT };
+      Type *ProgRunArgTys[2] = {ProgSelfTy, CtxPT};
       auto *ProgRunRetty = Type::getInt32Ty(C);
 
       auto *ProgRunTy = FunctionType::get(ProgRunRetty, ProgRunArgTys, false);
@@ -218,15 +226,17 @@ bool IUEntryInsertion::runOnModule(Module &M) {
       auto *OP2 = CS->getOperand(2);
       auto *OP2CE = cast<ConstantExpr>(OP2);
 
-      auto *ProgNameInit = cast<GlobalVariable>(OP2CE->getOperand(0))->getInitializer();
+      auto *ProgNameInit =
+          cast<GlobalVariable>(OP2CE->getOperand(0))->getInitializer();
       auto *ProgNameStruct = cast<ConstantStruct>(ProgNameInit);
-      auto *ProgNameCda = cast<ConstantDataArray>(ProgNameStruct->getOperand(0));
+      auto *ProgNameCda =
+          cast<ConstantDataArray>(ProgNameStruct->getOperand(0));
       std::string ProgName(ProgNameCda->getRawDataValues().data(),
                            ProgNameCda->getType()->getNumElements());
 
       // Add the function using the extracted information above
       auto *EntryFunc = insertEntry(M, ProgRun, &G, CtxPT, ProgName, RTTI);
-	  auto *EntryFuncInt8Ptr = ConstantExpr::getBitCast(EntryFunc, Int8PtrTy);
+      auto *EntryFuncInt8Ptr = ConstantExpr::getBitCast(EntryFunc, Int8PtrTy);
       UsedGV.push_back(EntryFuncInt8Ptr);
 
       // Transformation made
@@ -234,18 +244,18 @@ bool IUEntryInsertion::runOnModule(Module &M) {
     }
   }
 
-  // Mark the needed symbols as used
-  markUsedGlobalVariables(M, UsedGV);
+  // Mark the inserted symbols as used
+  if (Changed)
+    markUsedGlobalVariables(M, UsedGV);
 
   return Changed;
 }
 
 /// Wrapper for the new pass manager
-PreservedAnalyses IUEntryInsertion::run(Module &M,
-                                        ModuleAnalysisManager &AM) {
+PreservedAnalyses IUEntryInsertion::run(Module &M, ModuleAnalysisManager &AM) {
   // Run entry insertion pass
-  runOnModule(M);
+  bool Changed = runOnModule(M);
 
-  // Invalidate all analysis given that new code has been added
-  return PreservedAnalyses::none();
+  // Invalidate all analysis if any new code has been added
+  return Changed ? PreservedAnalyses::none() : PreservedAnalyses::all();
 }
