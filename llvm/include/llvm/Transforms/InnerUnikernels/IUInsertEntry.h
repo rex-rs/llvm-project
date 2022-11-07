@@ -17,6 +17,7 @@
 #ifndef LLVM_TRANSFORMS_IUINSERTENTRY_H
 #define LLVM_TRANSFORMS_IUINSERTENTRY_H
 
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/IR/PassManager.h"
 
@@ -29,9 +30,10 @@ class IUEntryInsertion : public PassInfoMixin<IUEntryInsertion> {
   };
 
   bool runOnModule(Module &);
-  void insertEntry(LLVMContext &, Module &, FunctionCallee &, GlobalVariable *,
-                   Type *, StringRef, unsigned);
+  Function *insertEntry(Module &, FunctionCallee &, GlobalVariable *, Type *,
+    StringRef, unsigned);
   void setIUFnAttr(LLVMContext &, Function *);
+  void markUsedGlobalVariables(Module &, ArrayRef<Constant *>);
 
 public:
   PreservedAnalyses run(Module &, ModuleAnalysisManager &);
