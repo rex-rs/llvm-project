@@ -9,10 +9,14 @@
 // This file implements the entry code insertion pass for Inner-Unikernels
 // programs. It generates a new function that calls into the __iu_entry_*()
 // functions in the kernel runtime crate for each global IU program
-// objects.
+// objects. The pass then sets the entry functions as "used" to prevent
+// link-time stripping using @llvm.used, which will automatically set the
+// "SHF_GNU_RETAIN" flag for these symbols.
 //
 //===----------------------------------------------------------------------===//
 
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSet.h"
@@ -20,6 +24,7 @@
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/GlobalValue.h"
 #include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instruction.h"
@@ -49,9 +54,9 @@ using namespace llvm;
 STATISTIC(NumInserted,  "Number of entry function inserted");
 
 /// Performs the actual insertion of the new function
-void IUEntryInsertion::insertEntry(LLVMContext &C, Module &M,
-  FunctionCallee &ProgRun, GlobalVariable *ProgObj, Type *CtxPT,
-  StringRef EntryName, unsigned ProgType) {
+Function *IUEntryInsertion::insertEntry(Module &M, FunctionCallee &ProgRun,
+  GlobalVariable *ProgObj, Type *CtxPT, StringRef Name, unsigned ProgType) {
+  auto &C = M.getContext();
 
   // Argument and return type
   auto *EntryRetty = Type::getInt32Ty(C);
@@ -59,7 +64,7 @@ void IUEntryInsertion::insertEntry(LLVMContext &C, Module &M,
 
   // Declare the function in module
   auto *EntryTy = FunctionType::get(EntryRetty, EntryArgTys, false);
-  auto Entry = M.getOrInsertFunction(EntryName, EntryTy);
+  auto Entry = M.getOrInsertFunction(Name, EntryTy);
 
   // Setup attributes
   auto *EntryFn = cast<Function>(Entry.getCallee());
@@ -92,6 +97,8 @@ void IUEntryInsertion::insertEntry(LLVMContext &C, Module &M,
   }
 
   NumInserted++;
+
+  return EntryFn;
 }
 
 /// Sets all the needed attribute for the Rust IU programs
@@ -117,11 +124,50 @@ void IUEntryInsertion::setIUFnAttr(LLVMContext &C, Function *F) {
   F->setAttributes(AS);
 }
 
+/// Mark the Variables (i.e. inserted functions and iu-prog objects) as
+/// used as these symbols are typically considered as dead code during the
+/// linking stage if the '--gc-sections' option is supplied to the linker.
+/// Marking the symbols as used would add the 'SHF_GNU_RETAIN' flag and
+/// prevent the linker from stripping them away.
+/// See also TargetLoweringObjectFileELF::getExplicitSectionGlobal and
+/// collectUsedGlobalVariables
+void IUEntryInsertion::markUsedGlobalVariables(Module &M,
+  ArrayRef<Constant *> Vec) {
+
+  // Do nothing if Vec is empty
+  if (Vec.empty())
+    return;
+
+  auto &C = M.getContext();
+  const std::string UsedName = "llvm.used";
+
+  // Create initializer for @llvm.used
+  auto *UsedInitElemTy = Type::getInt8Ty(C)->getPointerTo();
+  auto *UsedInitArrayTy = ArrayType::get(UsedInitElemTy, Vec.size());
+  auto *UsedInit = ConstantArray::get(UsedInitArrayTy, Vec);
+
+  // FIXME: Do not handle existing @llvm.used for now
+  assert(!M.getNamedValue(UsedName) && "@llvm.used exists!");
+
+  // Create @llvm.used in the module with initializer
+  auto *UsedConst = M.getOrInsertGlobal(UsedName, UsedInitArrayTy, [&] {
+    return new GlobalVariable(M, UsedInitArrayTy, false,
+                              GlobalVariable::AppendingLinkage, UsedInit,
+                              UsedName);
+  });
+
+  // Set section
+  auto *UsedGV = cast<GlobalVariable>(UsedConst);
+  UsedGV->setSection("llvm.metadata");
+}
+
 /// Entry point of the pass, it looks at all the global variables to identify
 /// the inner-unikernel program variables
 bool IUEntryInsertion::runOnModule(Module &M) {
   bool Changed = false; // Whether transformation is actually made
   auto &C = M.getContext();
+  SmallVector<Constant *, 8> UsedGV;
+  auto *Int8PtrTy = Type::getInt8Ty(C)->getPointerTo();
 
   // Traverse all Global variables
   for (auto &G: M.globals()) {
@@ -179,12 +225,17 @@ bool IUEntryInsertion::runOnModule(Module &M) {
                            ProgNameCda->getType()->getNumElements());
 
       // Add the function using the extracted information above
-      insertEntry(C, M, ProgRun, &G, CtxPT, ProgName, RTTI);
+      auto *EntryFunc = insertEntry(M, ProgRun, &G, CtxPT, ProgName, RTTI);
+	  auto *EntryFuncInt8Ptr = ConstantExpr::getBitCast(EntryFunc, Int8PtrTy);
+      UsedGV.push_back(EntryFuncInt8Ptr);
 
       // Transformation made
       Changed = true;
     }
   }
+
+  // Mark the needed symbols as used
+  markUsedGlobalVariables(M, UsedGV);
 
   return Changed;
 }
