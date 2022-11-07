@@ -1,3 +1,18 @@
+//===- IUInsertEntry.cpp - code to perform entry insertion for IU programs-===//
+//
+// Part of the Inner-Unikernels project, based on the LLVM project under
+// the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+// This file implements the entry code insertion pass for Inner-Unikernels
+// programs. It generates a new function that calls into the __iu_entry_*()
+// functions in the kernel runtime crate for each global IU program
+// objects.
+//
+//===----------------------------------------------------------------------===//
+
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSet.h"
