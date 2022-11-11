@@ -18,22 +18,32 @@
 #define LLVM_TRANSFORMS_IUINSERTENTRY_H
 
 #include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/StringSet.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/IR/PassManager.h"
+
+#include <string>
 
 namespace llvm {
 
 /// Pass to insert entry points for inner-unikernel programs
 class IUEntryInsertion : public PassInfoMixin<IUEntryInsertion> {
-  StringSet<> Sections = {
-      "tracepoint",
-  };
+  static SmallVector<std::string, 16> Sections;
 
   bool runOnModule(Module &);
   Function *insertEntry(Module &, FunctionCallee &, GlobalVariable *, Type *,
                         StringRef, unsigned);
   void setIUFnAttr(LLVMContext &, Function *);
   void markUsedGlobalVariables(Module &, ArrayRef<Constant *>);
+
+  inline bool isValidSection(StringRef ProgSec) {
+    for (auto &Section : Sections) {
+      if (!ProgSec.str().compare(0, Section.size(), Section))
+        return true;
+    }
+
+    return false;
+  }
 
 public:
   PreservedAnalyses run(Module &, ModuleAnalysisManager &);
