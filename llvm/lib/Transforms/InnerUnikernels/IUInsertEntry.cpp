@@ -95,7 +95,8 @@ Function *IUEntryInsertion::insertEntry(Module &M, FunctionCallee &ProgRun,
   case BPF_PROG_TYPE_TRACEPOINT: {
     ProgObj->setSection("obj_tracepoint");
     std::string SecPrefix("tracepoint");
-    auto Match = EntryFn->getSection().str().compare(0, SecPrefix.size(), SecPrefix);
+    auto Match =
+        EntryFn->getSection().str().compare(0, SecPrefix.size(), SecPrefix);
     assert(!Match && "invalid section name");
     break;
   }
