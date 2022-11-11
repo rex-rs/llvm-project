@@ -51,6 +51,10 @@ using namespace llvm;
 
 STATISTIC(NumInserted, "Number of entry function inserted");
 
+SmallVector<std::string, 16> IUEntryInsertion::Sections = {
+    "tracepoint",
+};
+
 /// Performs the actual insertion of the new function
 Function *IUEntryInsertion::insertEntry(Module &M, FunctionCallee &ProgRun,
                                         GlobalVariable *ProgObj, Type *CtxPT,
@@ -85,11 +89,16 @@ Function *IUEntryInsertion::insertEntry(Module &M, FunctionCallee &ProgRun,
   // Return
   InstBuilder.CreateRet(ProgRunCI);
 
-  // Put the function into the appropriate section
+  // Put the function and program object into appropriate sections
+  EntryFn->setSection(ProgObj->getSection());
   switch (ProgType) {
-  case BPF_PROG_TYPE_TRACEPOINT:
-    EntryFn->setSection("tracepoint");
+  case BPF_PROG_TYPE_TRACEPOINT: {
+    ProgObj->setSection("obj_tracepoint");
+    std::string SecPrefix("tracepoint");
+    auto Match = EntryFn->getSection().str().compare(0, SecPrefix.size(), SecPrefix);
+    assert(!Match && "invalid section name");
     break;
+  }
   default:
     llvm_unreachable("unknown prog type");
   }
@@ -179,7 +188,7 @@ bool IUEntryInsertion::runOnModule(Module &M) {
 
   // Traverse all Global variables
   for (auto &G : M.globals()) {
-    if (G.hasSection() && Sections.contains(G.getSection())) {
+    if (G.hasSection() && isValidSection(G.getSection())) {
       auto *Init = G.getInitializer();
       auto *CS = cast<ConstantStruct>(Init);
 
@@ -193,7 +202,6 @@ bool IUEntryInsertion::runOnModule(Module &M) {
       switch (RTTI) {
       case BPF_PROG_TYPE_TRACEPOINT:
         ProgRunName = "__iu_entry_tracepoint";
-        G.setSection("obj_tracepoint");
         break;
       default:
         llvm_unreachable("Unknown program type");
