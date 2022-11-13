@@ -41,9 +41,7 @@
 #include <sstream>
 #include <string>
 
-extern "C" {
 #include <linux/bpf.h>
-}
 
 using namespace llvm;
 
@@ -52,7 +50,8 @@ using namespace llvm;
 STATISTIC(NumInserted, "Number of entry function inserted");
 
 SmallVector<std::string, 16> IUEntryInsertion::Sections = {
-    "tracepoint",
+    "tracepoint/",
+    "kprobe/",
 };
 
 /// Performs the actual insertion of the new function
@@ -100,8 +99,16 @@ Function *IUEntryInsertion::insertEntry(Module &M, FunctionCallee &ProgRun,
     assert(!Match && "invalid section name");
     break;
   }
+  case BPF_PROG_TYPE_KPROBE: {
+    ProgObj->setSection("obj_kprobe");
+    std::string SecPrefix("kprobe");
+    auto Match =
+        EntryFn->getSection().str().compare(0, SecPrefix.size(), SecPrefix);
+    assert(!Match && "invalid section name");
+    break;
+  }
   default:
-    llvm_unreachable("unknown prog type");
+    llvm_unreachable("Unknown prog type");
   }
 
   NumInserted++;
@@ -203,6 +210,9 @@ bool IUEntryInsertion::runOnModule(Module &M) {
       switch (RTTI) {
       case BPF_PROG_TYPE_TRACEPOINT:
         ProgRunName = "__iu_entry_tracepoint";
+        break;
+      case BPF_PROG_TYPE_KPROBE:
+        ProgRunName = "__iu_entry_kprobe";
         break;
       default:
         llvm_unreachable("Unknown program type");
