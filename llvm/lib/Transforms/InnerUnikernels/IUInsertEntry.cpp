@@ -52,6 +52,7 @@ STATISTIC(NumInserted, "Number of entry function inserted");
 SmallVector<std::string, 16> IUEntryInsertion::Sections = {
     "tracepoint/",
     "kprobe/",
+    "perf_event",
 };
 
 /// Performs the actual insertion of the new function
@@ -102,6 +103,14 @@ Function *IUEntryInsertion::insertEntry(Module &M, FunctionCallee &ProgRun,
   case BPF_PROG_TYPE_KPROBE: {
     ProgObj->setSection("obj_kprobe");
     std::string SecPrefix("kprobe");
+    auto Match =
+        EntryFn->getSection().str().compare(0, SecPrefix.size(), SecPrefix);
+    assert(!Match && "invalid section name");
+    break;
+  }
+  case BPF_PROG_TYPE_PERF_EVENT: {
+    ProgObj->setSection("obj_perf_event");
+    std::string SecPrefix("perf_event");
     auto Match =
         EntryFn->getSection().str().compare(0, SecPrefix.size(), SecPrefix);
     assert(!Match && "invalid section name");
@@ -213,6 +222,9 @@ bool IUEntryInsertion::runOnModule(Module &M) {
         break;
       case BPF_PROG_TYPE_KPROBE:
         ProgRunName = "__iu_entry_kprobe";
+        break;
+      case BPF_PROG_TYPE_PERF_EVENT:
+        ProgRunName = "__iu_entry_perf_event";
         break;
       default:
         llvm_unreachable("Unknown program type");
