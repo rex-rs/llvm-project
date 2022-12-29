@@ -67,11 +67,10 @@ Function *IUEntryInsertion::insertEntry(Module &M, FunctionCallee &ProgRun,
 
   // Declare the function in module
   auto *EntryTy = FunctionType::get(EntryRetty, EntryArgTys, false);
-  auto Entry = M.getOrInsertFunction(Name, EntryTy);
+  auto Entry = M.getOrInsertFunction(Name, EntryTy, getIUFnAttr(C));
 
   // Setup attributes
   auto *EntryFn = cast<Function>(Entry.getCallee());
-  setIUFnAttr(C, EntryFn);
 
   // Construct function body, starting with entry BB
   auto *EntryBB = BasicBlock::Create(C, "start", EntryFn);
@@ -126,7 +125,7 @@ Function *IUEntryInsertion::insertEntry(Module &M, FunctionCallee &ProgRun,
 }
 
 /// Sets all the needed attribute for the Rust IU programs
-void IUEntryInsertion::setIUFnAttr(LLVMContext &C, Function *F) {
+AttributeList IUEntryInsertion::getIUFnAttr(LLVMContext &C) {
 
   // SIMD extensions are not allowed in the kernel
   std::stringstream TargetFeatureSs;
@@ -152,7 +151,7 @@ void IUEntryInsertion::setIUFnAttr(LLVMContext &C, Function *F) {
                   << "-ssse3";
 
   // Other needed attributes, e.g. kernel does not have redzone
-  auto AS = F->getAttributes();
+  AttributeList AS;
   AS = AS.addFnAttribute(C, Attribute::AttrKind::NoRedZone)
            .addFnAttribute(C, Attribute::AttrKind::NoUnwind)
            .addFnAttribute(C, Attribute::AttrKind::NonLazyBind)
@@ -160,7 +159,7 @@ void IUEntryInsertion::setIUFnAttr(LLVMContext &C, Function *F) {
            .addFnAttribute(C, "target-cpu", "x86-64")
            .addFnAttribute(C, "target-features", TargetFeatureSs.str())
            .addFnAttribute(C, "tune-cpu", "generic");
-  F->setAttributes(AS);
+  return AS;
 }
 
 /// Mark the Variables (i.e. inserted functions and iu-prog objects) as
@@ -247,11 +246,7 @@ bool IUEntryInsertion::runOnModule(Module &M) {
       auto *ProgRunRetty = Type::getInt32Ty(C);
 
       auto *ProgRunTy = FunctionType::get(ProgRunRetty, ProgRunArgTys, false);
-
-      auto ProgRun = M.getOrInsertFunction(ProgRunName, ProgRunTy);
-      auto *ProgRunFn = cast<Function>(ProgRun.getCallee());
-
-      setIUFnAttr(C, ProgRunFn);
+      auto ProgRun = M.getOrInsertFunction(ProgRunName, ProgRunTy, getIUFnAttr(C));
 
       // name: &'a str
       auto *OP2 = CS->getOperand(2);
