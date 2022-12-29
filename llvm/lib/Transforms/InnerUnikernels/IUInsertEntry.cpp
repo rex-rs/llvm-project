@@ -240,7 +240,7 @@ bool IUEntryInsertion::runOnModule(Module &M) {
       auto *ProgSelfTy = ProgFuncTy->getParamType(0);
 
       SmallVector<Type *, 0> CtxTys;
-      auto *CtxPT = StructType::create(C, CtxTys)->getPointerTo();
+      auto *CtxPT = StructType::get(C, CtxTys)->getPointerTo();
 
       Type *ProgRunArgTys[2] = {ProgSelfTy, CtxPT};
       auto *ProgRunRetty = Type::getInt32Ty(C);
