@@ -20,6 +20,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/IR/Attributes.h"
 #include "llvm/IR/PassManager.h"
 
 #include <string>
@@ -33,7 +34,7 @@ class IUEntryInsertion : public PassInfoMixin<IUEntryInsertion> {
   bool runOnModule(Module &);
   Function *insertEntry(Module &, FunctionCallee &, GlobalVariable *, Type *,
                         StringRef, unsigned);
-  void setIUFnAttr(LLVMContext &, Function *);
+  AttributeList getIUFnAttr(LLVMContext &);
   void markUsedGlobalVariables(Module &, ArrayRef<Constant *>);
 
   inline bool isValidSection(StringRef ProgSec) {
