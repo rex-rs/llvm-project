@@ -53,36 +53,37 @@ SmallVector<std::string, 16> IUEntryInsertion::Sections = {
     "tracepoint/",
     "kprobe/",
     "perf_event",
+    "xdp",
 };
 
 /// Performs the actual insertion of the new function
 Function *IUEntryInsertion::insertEntry(Module &M, FunctionCallee &ProgRun,
                                         GlobalVariable *ProgObj, Type *CtxPT,
                                         StringRef Name, unsigned ProgType) {
-  auto &C = M.getContext();
+  LLVMContext &C = M.getContext();
 
   // Argument and return type
-  auto *EntryRetty = Type::getInt32Ty(C);
+  IntegerType *EntryRetty = Type::getInt32Ty(C);
   Type *EntryArgTys[1] = {CtxPT};
 
   // Declare the function in module
-  auto *EntryTy = FunctionType::get(EntryRetty, EntryArgTys, false);
-  auto Entry = M.getOrInsertFunction(Name, EntryTy, getIUFnAttr(C));
+  FunctionType *EntryTy = FunctionType::get(EntryRetty, EntryArgTys, false);
+  FunctionCallee Entry = M.getOrInsertFunction(Name, EntryTy, getIUFnAttr(C));
 
   // Setup attributes
-  auto *EntryFn = cast<Function>(Entry.getCallee());
+  Function *EntryFn = cast<Function>(Entry.getCallee());
 
   // Construct function body, starting with entry BB
-  auto *EntryBB = BasicBlock::Create(C, "start", EntryFn);
+  BasicBlock  *EntryBB = BasicBlock::Create(C, "start", EntryFn);
   IRBuilder<> InstBuilder(EntryBB);
 
   // Bitcast away the packed attribute
-  auto *SelfType = ProgRun.getFunctionType()->getParamType(0);
-  auto *SelfObj = InstBuilder.CreateBitCast(ProgObj, SelfType);
+  Type *SelfType = ProgRun.getFunctionType()->getParamType(0);
+  Value *SelfObj = InstBuilder.CreateBitCast(ProgObj, SelfType);
 
   // Construct call to prog_run
   Value *ProgRunArgs[2] = {SelfObj, EntryFn->getArg(0)};
-  auto *ProgRunCI = InstBuilder.CreateCall(ProgRun.getFunctionType(),
+  CallInst *ProgRunCI = InstBuilder.CreateCall(ProgRun.getFunctionType(),
                                            ProgRun.getCallee(), ProgRunArgs);
 
   // Return
@@ -110,6 +111,14 @@ Function *IUEntryInsertion::insertEntry(Module &M, FunctionCallee &ProgRun,
   case BPF_PROG_TYPE_PERF_EVENT: {
     ProgObj->setSection("obj_perf_event");
     std::string SecPrefix("perf_event");
+    auto Match =
+        EntryFn->getSection().str().compare(0, SecPrefix.size(), SecPrefix);
+    assert(!Match && "invalid section name");
+    break;
+  }
+  case BPF_PROG_TYPE_XDP: {
+    ProgObj->setSection("obj_xdp");
+    std::string SecPrefix("xdp");
     auto Match =
         EntryFn->getSection().str().compare(0, SecPrefix.size(), SecPrefix);
     assert(!Match && "invalid section name");
@@ -175,15 +184,15 @@ void IUEntryInsertion::markUsedGlobalVariables(Module &M,
   const char *UsedName = "llvm.used";
 
   // Create initializer for @llvm.used
-  auto *UsedInitElemTy = Type::getInt8Ty(C)->getPointerTo();
-  auto *UsedInitArrayTy = ArrayType::get(UsedInitElemTy, Vec.size());
-  auto *UsedInit = ConstantArray::get(UsedInitArrayTy, Vec);
+  PointerType *UsedInitElemTy = Type::getInt8Ty(C)->getPointerTo();
+  ArrayType *UsedInitArrayTy = ArrayType::get(UsedInitElemTy, Vec.size());
+  Constant *UsedInit = ConstantArray::get(UsedInitArrayTy, Vec);
 
   // FIXME: Do not handle existing @llvm.used for now
   assert(!M.getNamedValue(UsedName) && "@llvm.used exists!");
 
   // Create @llvm.used in the module with initializer
-  auto *UsedConst = M.getOrInsertGlobal(UsedName, UsedInitArrayTy, [&] {
+  Constant *UsedConst = M.getOrInsertGlobal(UsedName, UsedInitArrayTy, [&] {
     return new GlobalVariable(M, UsedInitArrayTy, false,
                               GlobalVariable::AppendingLinkage, UsedInit,
                               UsedName);
@@ -246,7 +255,8 @@ bool IUEntryInsertion::runOnModule(Module &M) {
       auto *ProgRunRetty = Type::getInt32Ty(C);
 
       auto *ProgRunTy = FunctionType::get(ProgRunRetty, ProgRunArgTys, false);
-      auto ProgRun = M.getOrInsertFunction(ProgRunName, ProgRunTy, getIUFnAttr(C));
+      auto ProgRun =
+          M.getOrInsertFunction(ProgRunName, ProgRunTy, getIUFnAttr(C));
 
       // name: &'a str
       auto *OP2 = CS->getOperand(2);
