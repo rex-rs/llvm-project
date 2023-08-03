@@ -234,6 +234,9 @@ bool IUEntryInsertion::runOnModule(Module &M) {
       case BPF_PROG_TYPE_PERF_EVENT:
         ProgRunName = "__iu_entry_perf_event";
         break;
+      case BPF_PROG_TYPE_XDP:
+        ProgRunName = "__iu_entry_xdp";
+        break;
       default:
         llvm_unreachable("Unknown program type");
       }
