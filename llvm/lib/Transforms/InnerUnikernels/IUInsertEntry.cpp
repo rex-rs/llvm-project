@@ -54,6 +54,7 @@ SmallVector<std::string, 16> IUEntryInsertion::Sections = {
     "kprobe/",
     "perf_event",
     "xdp",
+    "sched_cls",
 };
 
 /// Performs the actual insertion of the new function
@@ -119,6 +120,14 @@ Function *IUEntryInsertion::insertEntry(Module &M, FunctionCallee &ProgRun,
   case BPF_PROG_TYPE_XDP: {
     ProgObj->setSection("obj_xdp");
     std::string SecPrefix("xdp");
+    auto Match =
+        EntryFn->getSection().str().compare(0, SecPrefix.size(), SecPrefix);
+    assert(!Match && "invalid section name");
+    break;
+  }
+  case BPF_PROG_TYPE_SCHED_CLS: {
+    ProgObj->setSection("obj_sched_cls");
+    std::string SecPrefix("sched_cls");
     auto Match =
         EntryFn->getSection().str().compare(0, SecPrefix.size(), SecPrefix);
     assert(!Match && "invalid section name");
@@ -236,6 +245,9 @@ bool IUEntryInsertion::runOnModule(Module &M) {
         break;
       case BPF_PROG_TYPE_XDP:
         ProgRunName = "__iu_entry_xdp";
+        break;
+      case BPF_PROG_TYPE_SCHED_CLS:
+        ProgRunName = "__iu_entry_sched_cls";
         break;
       default:
         llvm_unreachable("Unknown program type");
