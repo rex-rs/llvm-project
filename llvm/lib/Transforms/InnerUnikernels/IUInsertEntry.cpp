@@ -50,12 +50,17 @@ using namespace llvm;
 STATISTIC(NumInserted, "Number of entry function inserted");
 
 SmallVector<std::string, 16> IUEntryInsertion::Sections = {
-    "tracepoint/",
-    "kprobe/",
-    "perf_event",
-    "xdp",
-    "sched_cls",
+    "tracepoint/", "kprobe/", "perf_event", "xdp", "classifier", "tc",
 };
+
+inline bool IUEntryInsertion::isValidSection(StringRef ProgSec) {
+  for (auto &Section : Sections) {
+    if (!ProgSec.str().compare(0, Section.size(), Section))
+      return true;
+  }
+
+  return false;
+}
 
 /// Performs the actual insertion of the new function
 Function *IUEntryInsertion::insertEntry(Module &M, FunctionCallee &ProgRun,
@@ -75,7 +80,7 @@ Function *IUEntryInsertion::insertEntry(Module &M, FunctionCallee &ProgRun,
   Function *EntryFn = cast<Function>(Entry.getCallee());
 
   // Construct function body, starting with entry BB
-  BasicBlock  *EntryBB = BasicBlock::Create(C, "start", EntryFn);
+  BasicBlock *EntryBB = BasicBlock::Create(C, "start", EntryFn);
   IRBuilder<> InstBuilder(EntryBB);
 
   // Bitcast away the packed attribute
@@ -84,8 +89,8 @@ Function *IUEntryInsertion::insertEntry(Module &M, FunctionCallee &ProgRun,
 
   // Construct call to prog_run
   Value *ProgRunArgs[2] = {SelfObj, EntryFn->getArg(0)};
-  CallInst *ProgRunCI = InstBuilder.CreateCall(ProgRun.getFunctionType(),
-                                           ProgRun.getCallee(), ProgRunArgs);
+  CallInst *ProgRunCI = InstBuilder.CreateCall(
+      ProgRun.getFunctionType(), ProgRun.getCallee(), ProgRunArgs);
 
   // Return
   InstBuilder.CreateRet(ProgRunCI);
@@ -127,10 +132,17 @@ Function *IUEntryInsertion::insertEntry(Module &M, FunctionCallee &ProgRun,
   }
   case BPF_PROG_TYPE_SCHED_CLS: {
     ProgObj->setSection("obj_sched_cls");
-    std::string SecPrefix("sched_cls");
+    std::string SecPrefix("classifier");
+    std::string SecPrefix2("tx");
     auto Match =
         EntryFn->getSection().str().compare(0, SecPrefix.size(), SecPrefix);
-    assert(!Match && "invalid section name");
+    auto Match2 =
+        EntryFn->getSection().str().compare(0, SecPrefix2.size(), SecPrefix2);
+
+    assert(!(Match || Match2) && "invalid section name");
+    if (!(Match || Match2)) {
+      errs() << "invalid section name" << ProgObj->getSection().str() << "\n";
+    }
     break;
   }
   default:
@@ -250,7 +262,7 @@ bool IUEntryInsertion::runOnModule(Module &M) {
         ProgRunName = "__iu_entry_sched_cls";
         break;
       default:
-        llvm_unreachable("Unknown program type");
+        errs() << "Unknown RTTI " << RTTI << "\n";
       }
 
       // prog_fn

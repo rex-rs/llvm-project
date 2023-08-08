@@ -37,14 +37,7 @@ class IUEntryInsertion : public PassInfoMixin<IUEntryInsertion> {
   AttributeList getIUFnAttr(LLVMContext &);
   void markUsedGlobalVariables(Module &, ArrayRef<Constant *>);
 
-  inline bool isValidSection(StringRef ProgSec) {
-    for (auto &Section : Sections) {
-      if (!ProgSec.str().compare(0, Section.size(), Section))
-        return true;
-    }
-
-    return false;
-  }
+  inline bool isValidSection(StringRef ProgSec);
 
 public:
   PreservedAnalyses run(Module &, ModuleAnalysisManager &);
