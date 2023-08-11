@@ -133,16 +133,20 @@ Function *IUEntryInsertion::insertEntry(Module &M, FunctionCallee &ProgRun,
   case BPF_PROG_TYPE_SCHED_CLS: {
     ProgObj->setSection("obj_sched_cls");
     std::string SecPrefix("classifier");
-    std::string SecPrefix2("tx");
-    auto Match =
-        EntryFn->getSection().str().compare(0, SecPrefix.size(), SecPrefix);
-    auto Match2 =
-        EntryFn->getSection().str().compare(0, SecPrefix2.size(), SecPrefix2);
+    std::string SecPrefix2("tc");
+    //  auto Match =
+    //      EntryFn->getSection().str().compare(0, SecPrefix.size(), SecPrefix);
+    //  auto Match2 =
+    //      EntryFn->getSection().str().compare(0, SecPrefix2.size(),
+    //      SecPrefix2);
 
-    assert(!(Match || Match2) && "invalid section name");
-    if (!(Match || Match2)) {
-      errs() << "invalid section name" << ProgObj->getSection().str() << "\n";
-    }
+    bool MatchPrefix1 = EntryFn->getSection().str().compare(0, SecPrefix.size(),
+                                                            SecPrefix) == 0;
+    bool MatchPrefix2 = EntryFn->getSection().str().compare(
+                            0, SecPrefix2.size(), SecPrefix2) == 0;
+
+    assert((MatchPrefix1 != MatchPrefix2) && "invalid section name");
+
     break;
   }
   default:
