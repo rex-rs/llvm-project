@@ -1,0 +1,5 @@
+IU_PROG_TYPE_1(BPF_PROG_TYPE_KPROBE, kprobe, "kprobe")
+IU_PROG_TYPE_1(BPF_PROG_TYPE_PERF_EVENT, perf_event, "perf_event")
+IU_PROG_TYPE_1(BPF_PROG_TYPE_XDP, xdp, "xdp")
+IU_PROG_TYPE_2(BPF_PROG_TYPE_SCHED_CLS, sched_cls, "classifier", "tc")
+IU_PROG_TYPE_2(BPF_PROG_TYPE_TRACEPOINT, tracepoint, "tracepoint", "tp")
