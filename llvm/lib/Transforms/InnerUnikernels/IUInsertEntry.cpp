@@ -49,23 +49,40 @@ using namespace llvm;
 
 STATISTIC(NumInserted, "Number of entry function inserted");
 
-SmallVector<std::string, 16> IUEntryInsertion::Sections = {
-    "tracepoint/", "kprobe/", "perf_event", "xdp", "classifier", "tc",
-};
-
-inline bool IUEntryInsertion::isValidSection(StringRef ProgSec) {
-  for (auto &Section : Sections) {
-    if (!ProgSec.str().compare(0, Section.size(), Section))
-      return true;
+/// Validate program sections, the put the function and program object
+/// into appropriate sections
+void IUEntryInsertion::validateAndFinalizeSection(Function *EntryFn,
+                                                  GlobalVariable *ProgObj,
+                                                  unsigned ProgType) const {
+  // We want to strip the "inner_unikernel/" prefix
+  // strlen("inner_unikernel/") + 1 = 16
+  EntryFn->setSection(ProgObj->getSection().substr(16));
+  switch (ProgType) {
+#define IU_PROG_TYPE_1(ty_enum, ty_name, sec)                                  \
+  case ty_enum:                                                                \
+    ProgObj->setSection("obj" #ty_name);                                       \
+    assert(EntryFn->getSection().startswith(sec) && "invalid section name");   \
+    break;
+#define IU_PROG_TYPE_2(ty_enum, ty_name, sec1, sec2)                           \
+  case ty_enum:                                                                \
+    ProgObj->setSection("obj" #ty_name);                                       \
+    assert((EntryFn->getSection().startswith(sec1) ||                          \
+            EntryFn->getSection().startswith(sec2)) &&                         \
+           "invalid section name");                                            \
+    break;
+#include "llvm/Transforms/InnerUnikernels/IUProgType.def"
+#undef IU_PROG_TYPE_1
+#undef IU_PROG_TYPE_2
+  default:
+    llvm_unreachable("Unknown prog type");
   }
-
-  return false;
 }
 
 /// Performs the actual insertion of the new function
 Function *IUEntryInsertion::insertEntry(Module &M, FunctionCallee &ProgRun,
                                         GlobalVariable *ProgObj, Type *CtxPT,
-                                        StringRef Name, unsigned ProgType) {
+                                        StringRef Name,
+                                        unsigned ProgType) const {
   LLVMContext &C = M.getContext();
 
   // Argument and return type
@@ -95,63 +112,7 @@ Function *IUEntryInsertion::insertEntry(Module &M, FunctionCallee &ProgRun,
   // Return
   InstBuilder.CreateRet(ProgRunCI);
 
-  // Put the function and program object into appropriate sections
-  EntryFn->setSection(ProgObj->getSection());
-  switch (ProgType) {
-  case BPF_PROG_TYPE_TRACEPOINT: {
-    ProgObj->setSection("obj_tracepoint");
-    std::string SecPrefix("tracepoint");
-    auto Match =
-        EntryFn->getSection().str().compare(0, SecPrefix.size(), SecPrefix);
-    assert(!Match && "invalid section name");
-    break;
-  }
-  case BPF_PROG_TYPE_KPROBE: {
-    ProgObj->setSection("obj_kprobe");
-    std::string SecPrefix("kprobe");
-    auto Match =
-        EntryFn->getSection().str().compare(0, SecPrefix.size(), SecPrefix);
-    assert(!Match && "invalid section name");
-    break;
-  }
-  case BPF_PROG_TYPE_PERF_EVENT: {
-    ProgObj->setSection("obj_perf_event");
-    std::string SecPrefix("perf_event");
-    auto Match =
-        EntryFn->getSection().str().compare(0, SecPrefix.size(), SecPrefix);
-    assert(!Match && "invalid section name");
-    break;
-  }
-  case BPF_PROG_TYPE_XDP: {
-    ProgObj->setSection("obj_xdp");
-    std::string SecPrefix("xdp");
-    auto Match =
-        EntryFn->getSection().str().compare(0, SecPrefix.size(), SecPrefix);
-    assert(!Match && "invalid section name");
-    break;
-  }
-  case BPF_PROG_TYPE_SCHED_CLS: {
-    ProgObj->setSection("obj_sched_cls");
-    std::string SecPrefix("classifier");
-    std::string SecPrefix2("tc");
-    //  auto Match =
-    //      EntryFn->getSection().str().compare(0, SecPrefix.size(), SecPrefix);
-    //  auto Match2 =
-    //      EntryFn->getSection().str().compare(0, SecPrefix2.size(),
-    //      SecPrefix2);
-
-    bool MatchPrefix1 = EntryFn->getSection().str().compare(0, SecPrefix.size(),
-                                                            SecPrefix) == 0;
-    bool MatchPrefix2 = EntryFn->getSection().str().compare(
-                            0, SecPrefix2.size(), SecPrefix2) == 0;
-
-    assert((MatchPrefix1 != MatchPrefix2) && "invalid section name");
-
-    break;
-  }
-  default:
-    llvm_unreachable("Unknown prog type");
-  }
+  validateAndFinalizeSection(EntryFn, ProgObj, ProgType);
 
   NumInserted++;
 
@@ -159,7 +120,7 @@ Function *IUEntryInsertion::insertEntry(Module &M, FunctionCallee &ProgRun,
 }
 
 /// Sets all the needed attribute for the Rust IU programs
-AttributeList IUEntryInsertion::getIUFnAttr(LLVMContext &C) {
+AttributeList IUEntryInsertion::getIUFnAttr(LLVMContext &C) const {
 
   // SIMD extensions are not allowed in the kernel
   std::stringstream TargetFeatureSs;
@@ -204,8 +165,8 @@ AttributeList IUEntryInsertion::getIUFnAttr(LLVMContext &C) {
 /// See also TargetLoweringObjectFileELF::getExplicitSectionGlobal and
 /// collectUsedGlobalVariables
 void IUEntryInsertion::markUsedGlobalVariables(Module &M,
-                                               ArrayRef<Constant *> Vec) {
-  auto &C = M.getContext();
+                                               ArrayRef<Constant *> Vec) const {
+  LLVMContext &C = M.getContext();
   const char *UsedName = "llvm.used";
 
   // Create initializer for @llvm.used
@@ -230,70 +191,67 @@ void IUEntryInsertion::markUsedGlobalVariables(Module &M,
 
 /// Entry point of the pass, it looks at all the global variables to identify
 /// the inner-unikernel program variables
-bool IUEntryInsertion::runOnModule(Module &M) {
+bool IUEntryInsertion::runOnModule(Module &M) const {
   bool Changed = false; // Whether transformation is actually made
-  auto &C = M.getContext();
+  LLVMContext &C = M.getContext();
   SmallVector<Constant *, 8> UsedGV;
-  auto *Int8PtrTy = Type::getInt8Ty(C)->getPointerTo();
+  PointerType *Int8PtrTy = Type::getInt8Ty(C)->getPointerTo();
 
   // Traverse all Global variables
-  for (auto &G : M.globals()) {
-    if (G.hasSection() && isValidSection(G.getSection())) {
-      auto *Init = G.getInitializer();
+  for (GlobalVariable &G : M.globals()) {
+    if (G.hasSection() && G.getSection().startswith("inner_unikernel")) {
+      Constant *Init = G.getInitializer();
       auto *CS = cast<ConstantStruct>(Init);
 
       // rtti
-      auto *OP0 = CS->getOperand(0);
+      Constant *OP0 = CS->getOperand(0);
       auto *OP0Cda = cast<ConstantDataArray>(OP0);
-      const auto *RawRTTI = OP0Cda->getRawDataValues().data();
+      const char *RawRTTI = OP0Cda->getRawDataValues().data();
       auto RTTI = *reinterpret_cast<const int *>(RawRTTI);
 
       std::string ProgRunName;
       switch (RTTI) {
-      case BPF_PROG_TYPE_TRACEPOINT:
-        ProgRunName = "__iu_entry_tracepoint";
-        break;
-      case BPF_PROG_TYPE_KPROBE:
-        ProgRunName = "__iu_entry_kprobe";
-        break;
-      case BPF_PROG_TYPE_PERF_EVENT:
-        ProgRunName = "__iu_entry_perf_event";
-        break;
-      case BPF_PROG_TYPE_XDP:
-        ProgRunName = "__iu_entry_xdp";
-        break;
-      case BPF_PROG_TYPE_SCHED_CLS:
-        ProgRunName = "__iu_entry_sched_cls";
-        break;
+#define IU_PROG_TYPE_1(ty_enum, ty_name, sec)                                  \
+  case ty_enum:                                                                \
+    ProgRunName = "__iu_entry_" #ty_name;                                      \
+    break;
+#define IU_PROG_TYPE_2(ty_enum, ty_name, sec1, sec2)                           \
+  case ty_enum:                                                                \
+    ProgRunName = "__iu_entry_" #ty_name;                                      \
+    break;
+#include "llvm/Transforms/InnerUnikernels/IUProgType.def"
+#undef IU_PROG_TYPE_1
+#undef IU_PROG_TYPE_2
       default:
         errs() << "Unknown RTTI " << RTTI << "\n";
       }
 
       // prog_fn
-      auto *OP1 = CS->getOperand(1);
+      Constant *OP1 = CS->getOperand(1);
       auto *OP1CE = cast<ConstantExpr>(OP1);
 
-      auto *OP1SrcTy = OP1CE->getOperand(0)->getType();
-      auto *OP1PointeeT = OP1SrcTy->getNonOpaquePointerElementType();
+      Type *OP1SrcTy = OP1CE->getOperand(0)->getType();
+      Type *OP1PointeeT = OP1SrcTy->getNonOpaquePointerElementType();
 
       auto *ProgFuncTy = cast<FunctionType>(OP1PointeeT);
-      auto *ProgSelfTy = ProgFuncTy->getParamType(0);
+      Type *ProgSelfTy = ProgFuncTy->getParamType(0);
 
       SmallVector<Type *, 0> CtxTys;
-      auto *CtxPT = StructType::get(C, CtxTys)->getPointerTo();
+      PointerType *CtxPT = StructType::get(C, CtxTys)->getPointerTo();
 
       Type *ProgRunArgTys[2] = {ProgSelfTy, CtxPT};
-      auto *ProgRunRetty = Type::getInt32Ty(C);
+      IntegerType *ProgRunRetty = Type::getInt32Ty(C);
 
-      auto *ProgRunTy = FunctionType::get(ProgRunRetty, ProgRunArgTys, false);
-      auto ProgRun =
+      FunctionType *ProgRunTy =
+          FunctionType::get(ProgRunRetty, ProgRunArgTys, false);
+      FunctionCallee ProgRun =
           M.getOrInsertFunction(ProgRunName, ProgRunTy, getIUFnAttr(C));
 
       // name: &'a str
-      auto *OP2 = CS->getOperand(2);
+      Constant *OP2 = CS->getOperand(2);
       auto *OP2CE = cast<ConstantExpr>(OP2);
 
-      auto *ProgNameInit =
+      Constant *ProgNameInit =
           cast<GlobalVariable>(OP2CE->getOperand(0))->getInitializer();
       auto *ProgNameStruct = cast<ConstantStruct>(ProgNameInit);
       auto *ProgNameCda =
@@ -302,8 +260,9 @@ bool IUEntryInsertion::runOnModule(Module &M) {
                            ProgNameCda->getType()->getNumElements());
 
       // Add the function using the extracted information above
-      auto *EntryFunc = insertEntry(M, ProgRun, &G, CtxPT, ProgName, RTTI);
-      auto *EntryFuncInt8Ptr = ConstantExpr::getBitCast(EntryFunc, Int8PtrTy);
+      Function *EntryFunc = insertEntry(M, ProgRun, &G, CtxPT, ProgName, RTTI);
+      Constant *EntryFuncInt8Ptr =
+          ConstantExpr::getBitCast(EntryFunc, Int8PtrTy);
       UsedGV.push_back(EntryFuncInt8Ptr);
 
       // Transformation made
