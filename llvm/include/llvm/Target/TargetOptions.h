@@ -381,6 +381,9 @@ namespace llvm {
     /// into the RO data section.
     unsigned XCOFFReadOnlyPointers : 1;
 
+    /// Inner-unikernel flag
+    unsigned IUEnabled : 1;
+
     /// Name of the stack usage file (i.e., .su file) if user passes
     /// -fstack-usage. If empty, it can be implied that -fstack-usage is not
     /// passed on the command line.
