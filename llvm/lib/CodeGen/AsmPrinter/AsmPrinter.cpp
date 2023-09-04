@@ -1967,8 +1967,9 @@ void AsmPrinter::checkStackUsageIU(const MachineFunction &MF) const {
     {
       raw_string_ostream OS(ErrMsg);
       OS << "Stack usage exceeded 1 page (4096 bytes)"
-         << "for inner-unikernel function "
-         << MF.getName();
+         << " for function " << MF.getName()
+         << " in inner-unikernel module "
+         << MF.getFunction().getParent()->getName();
     }
     report_fatal_error(StringRef(ErrMsg));
   }
