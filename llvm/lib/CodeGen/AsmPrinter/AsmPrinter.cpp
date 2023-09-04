@@ -1958,6 +1958,22 @@ void AsmPrinter::handleCallsiteForCallgraph(
   }
 }
 
+void AsmPrinter::checkStackUsageIU(const MachineFunction &MF) const {
+  unsigned PageSize = 0x1000;
+
+  // ICE if threshold exceeded
+  if (MF.getFrameInfo().getStackSize() >= PageSize) {
+    std::string ErrMsg;
+    {
+      raw_string_ostream OS(ErrMsg);
+      OS << "Stack usage exceeded 1 page (4096 bytes)"
+         << "for inner-unikernel function "
+         << MF.getName();
+    }
+    report_fatal_error(StringRef(ErrMsg));
+  }
+}
+
 /// EmitFunctionBody - This method emits the body and trailer for a
 /// function.
 void AsmPrinter::emitFunctionBody() {
@@ -2373,6 +2389,10 @@ void AsmPrinter::emitFunctionBody() {
 
   // Emit .su file containing function stack size information.
   emitStackUsage(*MF);
+
+  // Check the stack usage for inner-unikernel programs
+  if (MF->getTarget().Options.IUEnabled)
+    checkStackUsageIU(*MF);
 
   emitPatchableFunctionEntries();
 
