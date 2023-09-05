@@ -28,6 +28,8 @@
 #include "llvm/IR/GlobalValue.h"
 #include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/InstIterator.h"
+#include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/LLVMContext.h"
@@ -197,6 +199,9 @@ bool IUEntryInsertion::runOnModule(Module &M) const {
   SmallVector<Constant *, 8> UsedGV;
   PointerType *Int8PtrTy = Type::getInt8Ty(C)->getPointerTo();
 
+  // Perform stack depth instrumentation
+  instrumentStack(M, C);
+
   // Traverse all Global variables
   for (GlobalVariable &G : M.globals()) {
     if (G.hasSection() && G.getSection().startswith("inner_unikernel")) {
@@ -275,6 +280,31 @@ bool IUEntryInsertion::runOnModule(Module &M) const {
     markUsedGlobalVariables(M, UsedGV);
 
   return Changed;
+}
+
+bool IUEntryInsertion::instrumentStack(Module &M, LLVMContext &C) const {
+  FunctionType *CheckStackTy =
+      FunctionType::get(Type::getVoidTy(C), {}, false);
+  FunctionCallee CheckStack =
+      M.getOrInsertFunction("__iu_check_stack", CheckStackTy, getIUFnAttr(C));
+  SmallVector<Instruction *, 32> WorkSet;
+
+  for (auto &F: M.functions()) {
+    for (auto &I: instructions(F)) {
+      if (auto *CI = dyn_cast<CallBase>(&I))
+        WorkSet.push_back(CI);
+    }
+  }
+
+  if (WorkSet.empty())
+    return false;
+
+  for (auto *I: WorkSet) {
+    IRBuilder<> InstBuilder(I);
+    InstBuilder.CreateCall(CheckStack);
+  }
+
+  return true;
 }
 
 /// Wrapper for the new pass manager
