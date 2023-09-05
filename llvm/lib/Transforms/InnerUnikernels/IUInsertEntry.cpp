@@ -287,19 +287,19 @@ bool IUEntryInsertion::instrumentStack(Module &M, LLVMContext &C) const {
       FunctionType::get(Type::getVoidTy(C), {}, false);
   FunctionCallee CheckStack =
       M.getOrInsertFunction("__iu_check_stack", CheckStackTy, getIUFnAttr(C));
-  SmallVector<Instruction *, 32> WorkSet;
+  SmallVector<Instruction *, 32> WorkList;
 
   for (auto &F: M.functions()) {
     for (auto &I: instructions(F)) {
       if (auto *CI = dyn_cast<CallBase>(&I))
-        WorkSet.push_back(CI);
+        WorkList.push_back(CI);
     }
   }
 
-  if (WorkSet.empty())
+  if (WorkList.empty())
     return false;
 
-  for (auto *I: WorkSet) {
+  for (auto *I: WorkList) {
     IRBuilder<> InstBuilder(I);
     InstBuilder.CreateCall(CheckStack);
   }
