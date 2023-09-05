@@ -34,6 +34,7 @@ class IUEntryInsertion : public PassInfoMixin<IUEntryInsertion> {
   void markUsedGlobalVariables(Module &M, ArrayRef<Constant *> Vec) const;
   void validateAndFinalizeSection(Function *EntryFn, GlobalVariable *ProgObj,
                                   unsigned ProgType) const;
+  bool instrumentStack(Module &M, LLVMContext &C) const;
 
 public:
   PreservedAnalyses run(Module &M, ModuleAnalysisManager &AM);
