@@ -1787,6 +1787,8 @@ void AsmPrinter::checkStackUsageIU(const MachineFunction &MF) const {
     }
     report_fatal_error(StringRef(ErrMsg));
   }
+
+  // TODO: Handle dynamic stack size
 }
 
 
