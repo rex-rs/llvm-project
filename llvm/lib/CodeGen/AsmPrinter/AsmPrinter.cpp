@@ -1773,22 +1773,31 @@ static StringRef getMIMnemonic(const MachineInstr &MI, MCStreamer &Streamer) {
 }
 
 void AsmPrinter::checkStackUsageIU(const MachineFunction &MF) const {
-  unsigned PageSize = 0x1000;
+  unsigned Limit = 0x1000;
+  const MachineFrameInfo &FrameInfo = MF.getFrameInfo();
 
   // ICE if threshold exceeded
-  if (MF.getFrameInfo().getStackSize() >= PageSize) {
+  if (FrameInfo.getStackSize() >= Limit) {
     std::string ErrMsg;
     {
       raw_string_ostream OS(ErrMsg);
-      OS << "Stack usage exceeded 1 page (4096 bytes)"
+      OS << "Stack usage exceeded limit of 4096 bytes"
+         << " for function " << MF.getName()
+         << " in inner-unikernel module "
+         << MF.getFunction().getParent()->getName();
+    }
+    report_fatal_error(StringRef(ErrMsg));
+  } else if (FrameInfo.hasVarSizedObjects()) {
+    std::string ErrMsg;
+    {
+      raw_string_ostream OS(ErrMsg);
+      OS << "Stack contains variable sized objects"
          << " for function " << MF.getName()
          << " in inner-unikernel module "
          << MF.getFunction().getParent()->getName();
     }
     report_fatal_error(StringRef(ErrMsg));
   }
-
-  // TODO: Handle dynamic stack size
 }
 
 
