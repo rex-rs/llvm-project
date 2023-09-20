@@ -200,7 +200,7 @@ bool IUEntryInsertion::runOnModule(Module &M) const {
   PointerType *Int8PtrTy = Type::getInt8Ty(C)->getPointerTo();
 
   // Perform stack depth instrumentation
-  instrumentStack(M, C);
+  Changed |= instrumentStack(M, C);
 
   // Traverse all Global variables
   for (GlobalVariable &G : M.globals()) {
@@ -289,6 +289,7 @@ bool IUEntryInsertion::instrumentStack(Module &M, LLVMContext &C) const {
       M.getOrInsertFunction("__iu_check_stack", CheckStackTy, getIUFnAttr(C));
   SmallVector<Instruction *, 32> WorkList;
 
+  // Find all calls to other functions
   for (auto &F: M.functions()) {
     for (auto &I: instructions(F)) {
       if (auto *CI = dyn_cast<CallBase>(&I))
@@ -299,6 +300,7 @@ bool IUEntryInsertion::instrumentStack(Module &M, LLVMContext &C) const {
   if (WorkList.empty())
     return false;
 
+  // Add the stack pointer instrumentation
   for (auto *I: WorkList) {
     IRBuilder<> InstBuilder(I);
     InstBuilder.CreateCall(CheckStack);
