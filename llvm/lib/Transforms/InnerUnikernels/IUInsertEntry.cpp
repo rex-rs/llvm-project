@@ -283,22 +283,26 @@ bool IUEntryInsertion::runOnModule(Module &M) const {
 }
 
 bool IUEntryInsertion::instrumentStack(Module &M, LLVMContext &C) const {
+  SmallVector<Instruction *, 32> WorkList;
+  bool HasIndirect = false;
+
+  // Find all calls to other functions
+  for (auto &F: M) {
+    for (auto &I: instructions(F)) {
+      if (auto *CI = dyn_cast<CallBase>(&I)) {
+        HasIndirect |= CI->isIndirectCall();
+        WorkList.push_back(CI);
+      }
+    }
+  }
+
+  if (!HasIndirect || WorkList.empty())
+    return false;
+
   FunctionType *CheckStackTy =
       FunctionType::get(Type::getVoidTy(C), {}, false);
   FunctionCallee CheckStack =
       M.getOrInsertFunction("__iu_check_stack", CheckStackTy, getIUFnAttr(C));
-  SmallVector<Instruction *, 32> WorkList;
-
-  // Find all calls to other functions
-  for (auto &F: M.functions()) {
-    for (auto &I: instructions(F)) {
-      if (auto *CI = dyn_cast<CallBase>(&I))
-        WorkList.push_back(CI);
-    }
-  }
-
-  if (WorkList.empty())
-    return false;
 
   // Add the stack pointer instrumentation
   for (auto *I: WorkList) {
