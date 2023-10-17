@@ -21,6 +21,7 @@
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSet.h"
+#include "llvm/Demangle/Demangle.h"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
@@ -287,10 +288,27 @@ bool IUEntryInsertion::instrumentStack(Module &M, LLVMContext &C) const {
   bool HasIndirect = false;
 
   // Find all calls to other functions
-  for (auto &F: M) {
-    for (auto &I: instructions(F)) {
+  for (auto &F : M) {
+    std::string Demangled;
+    nonMicrosoftDemangle(F.getName().data(), Demangled);
+    if (StringRef(Demangled).startswith(StringRef("inner_unikernel_rt::")))
+      continue;
+    for (auto &I : instructions(F)) {
       if (auto *CI = dyn_cast<CallBase>(&I)) {
         HasIndirect |= CI->isIndirectCall();
+        if (CI->isIndirectCall()) {
+          // errs() << F << ": " << *CI << '\n';
+          std::string ErrMsg;
+          {
+            raw_string_ostream OS(ErrMsg);
+            OS << "Instruction \'" << *CI << "\' in function \'";
+            F.printAsOperand(OS, false);
+            OS << "\' is an indirect call\n\n";
+            OS << "Function body:\n" << F << '\n';
+            OS << "demangled function name:\n" << Demangled << '\n';
+          }
+          report_fatal_error(StringRef(ErrMsg));
+        }
         WorkList.push_back(CI);
       }
     }
@@ -299,13 +317,12 @@ bool IUEntryInsertion::instrumentStack(Module &M, LLVMContext &C) const {
   if (!HasIndirect || WorkList.empty())
     return false;
 
-  FunctionType *CheckStackTy =
-      FunctionType::get(Type::getVoidTy(C), {}, false);
+  FunctionType *CheckStackTy = FunctionType::get(Type::getVoidTy(C), {}, false);
   FunctionCallee CheckStack =
       M.getOrInsertFunction("__iu_check_stack", CheckStackTy, getIUFnAttr(C));
 
   // Add the stack pointer instrumentation
-  for (auto *I: WorkList) {
+  for (auto *I : WorkList) {
     IRBuilder<> InstBuilder(I);
     InstBuilder.CreateCall(CheckStack);
   }
