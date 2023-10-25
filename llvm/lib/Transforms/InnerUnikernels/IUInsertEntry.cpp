@@ -17,10 +17,14 @@
 
 #include "llvm/Transforms/InnerUnikernels/IUInsertEntry.h"
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/GraphTraits.h"
+#include "llvm/ADT/SCCIterator.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSet.h"
+#include "llvm/Analysis/CallGraph.h"
+#include "llvm/Analysis/CallGraphSCCPass.h"
 #include "llvm/Demangle/Demangle.h"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/BasicBlock.h"
@@ -203,6 +207,10 @@ bool IUEntryInsertion::runOnModule(Module &M) const {
   // Perform stack depth instrumentation
   Changed |= instrumentStack(M, C);
 
+  NamedMDNode *NamedMD = M.getOrInsertNamedMetadata("iu-programs");
+
+  LLVMContext &Context = M.getContext();
+
   // Traverse all Global variables
   for (GlobalVariable &G : M.globals()) {
     if (G.hasSection() && G.getSection().startswith("inner_unikernel")) {
@@ -239,7 +247,7 @@ bool IUEntryInsertion::runOnModule(Module &M) const {
       Type *OP1SrcTy = OP1CE->getOperand(0)->getType();
       Type *OP1PointeeT = OP1SrcTy->getNonOpaquePointerElementType();
 
-      auto *ProgFuncTy = cast<FunctionType>(OP1PointeeT);
+      FunctionType *ProgFuncTy = cast<FunctionType>(OP1PointeeT);
       Type *ProgSelfTy = ProgFuncTy->getParamType(0);
 
       SmallVector<Type *, 0> CtxTys;
@@ -264,6 +272,14 @@ bool IUEntryInsertion::runOnModule(Module &M) const {
           cast<ConstantDataArray>(ProgNameStruct->getOperand(0));
       std::string ProgName(ProgNameCda->getRawDataValues().data(),
                            ProgNameCda->getType()->getNumElements());
+
+      // Add inserted program name metadata to backend pass
+      if (auto *FunOP1 = dyn_cast<Function>(OP1CE->getOperand(0))) {
+        StringRef UserProg = FunOP1->getName();
+        Metadata *Str = MDString::get(Context, UserProg);
+        MDNode *Node = MDNode::get(Context, Str);
+        NamedMD->addOperand(Node);
+      }
 
       // Add the function using the extracted information above
       Function *EntryFunc = insertEntry(M, ProgRun, &G, CtxPT, ProgName, RTTI);
@@ -296,19 +312,6 @@ bool IUEntryInsertion::instrumentStack(Module &M, LLVMContext &C) const {
     for (auto &I : instructions(F)) {
       if (auto *CI = dyn_cast<CallBase>(&I)) {
         HasIndirect |= CI->isIndirectCall();
-        if (CI->isIndirectCall()) {
-          // errs() << F << ": " << *CI << '\n';
-          std::string ErrMsg;
-          {
-            raw_string_ostream OS(ErrMsg);
-            OS << "Instruction \'" << *CI << "\' in function \'";
-            F.printAsOperand(OS, false);
-            OS << "\' is an indirect call\n\n";
-            OS << "Function body:\n" << F << '\n';
-            OS << "demangled function name:\n" << Demangled << '\n';
-          }
-          report_fatal_error(StringRef(ErrMsg));
-        }
         WorkList.push_back(CI);
       }
     }
@@ -316,6 +319,15 @@ bool IUEntryInsertion::instrumentStack(Module &M, LLVMContext &C) const {
 
   if (!HasIndirect || WorkList.empty())
     return false;
+
+  // Add metadata to backend pass
+  if (HasIndirect) {
+    NamedMDNode *NamedMD = M.getOrInsertNamedMetadata("iu-stack");
+    LLVMContext &Context = M.getContext();
+    Metadata *Str = MDString::get(Context, "iu-indirect-call");
+    MDNode *Node = MDNode::get(Context, Str);
+    NamedMD->addOperand(Node);
+  }
 
   FunctionType *CheckStackTy = FunctionType::get(Type::getVoidTy(C), {}, false);
   FunctionCallee CheckStack =
@@ -330,10 +342,50 @@ bool IUEntryInsertion::instrumentStack(Module &M, LLVMContext &C) const {
   return true;
 }
 
+bool IUEntryInsertion::containsCycle(CallGraph &CG) const {
+  for (scc_iterator<CallGraph *> I = scc_begin(&CG), E = scc_end(&CG); I != E;
+       ++I) {
+    SmallVector<CallGraphNode *, 64> SCC(I->begin(), I->end());
+
+    // If the SCC has more than one node, it's definitely a cycle.
+    if (SCC.size() > 1) {
+      return true;
+    }
+
+    CallGraphNode *Node = SCC.front();
+    // Even if it's a single-node SCC, it can be a self-cycle.
+    if (Node->size() > 0 && (*Node->begin()).second == Node) {
+
+      std::string Demangled;
+      nonMicrosoftDemangle(Node->getFunction()->getName().data(), Demangled);
+      // skip if the function is a core function
+      if (StringRef(Demangled).startswith(StringRef("<core::")))
+        continue;
+
+      errs() << "Found SCC condition 2 with Module "
+             << Node->getFunction()->getName() << "\n";
+      return true;
+    }
+  }
+
+  return false;
+}
+
 /// Wrapper for the new pass manager
 PreservedAnalyses IUEntryInsertion::run(Module &M, ModuleAnalysisManager &AM) {
   // Run entry insertion pass
   bool Changed = runOnModule(M);
+  CallGraph &CG = AM.getResult<CallGraphAnalysis>(M);
+  Recursive = containsCycle(CG);
+
+  if (Recursive) {
+    errs() << "Found recursive call graph with Module " << M.getName() << "\n";
+    NamedMDNode *NamedMD = M.getOrInsertNamedMetadata("iu-stack");
+    LLVMContext &Context = M.getContext();
+    Metadata *Str = MDString::get(Context, "iu-recursion");
+    MDNode *Node = MDNode::get(Context, Str);
+    NamedMD->addOperand(Node);
+  }
 
   // Invalidate all analysis if any new code has been added
   return Changed ? PreservedAnalyses::none() : PreservedAnalyses::all();
