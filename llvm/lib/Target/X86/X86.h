@@ -14,6 +14,7 @@
 #ifndef LLVM_LIB_TARGET_X86_X86_H
 #define LLVM_LIB_TARGET_X86_X86_H
 
+#include "llvm/Pass.h"
 #include "llvm/Support/CodeGen.h"
 
 namespace llvm {
@@ -170,6 +171,7 @@ FunctionPass *createX86SpeculativeLoadHardeningPass();
 FunctionPass *createX86SpeculativeExecutionSideEffectSuppression();
 FunctionPass *createX86ArgumentStackSlotPass();
 FunctionPass *createX86SuppressAPXForRelocationPass();
+ModulePass *createX86IUFrameSizePass();
 
 void initializeCompressEVEXPassPass(PassRegistry &);
 void initializeFPSPass(PassRegistry &);
@@ -207,6 +209,7 @@ void initializeX86SpeculativeLoadHardeningPassPass(PassRegistry &);
 void initializeX86TileConfigPass(PassRegistry &);
 void initializeX86SuppressAPXForRelocationPassPass(PassRegistry &);
 void initializeX86WinEHUnwindV2Pass(PassRegistry &);
+void initializeX86IUFrameSizePassPass(PassRegistry &);
 
 namespace X86AS {
 enum : unsigned {
