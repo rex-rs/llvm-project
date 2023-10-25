@@ -19,6 +19,7 @@
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Analysis/CallGraph.h"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/PassManager.h"
 
@@ -35,6 +36,8 @@ class IUEntryInsertion : public PassInfoMixin<IUEntryInsertion> {
   void validateAndFinalizeSection(Function *EntryFn, GlobalVariable *ProgObj,
                                   unsigned ProgType) const;
   bool instrumentStack(Module &M, LLVMContext &C) const;
+  bool containsCycle(CallGraph &CG) const;
+  bool Recursive;
 
 public:
   PreservedAnalyses run(Module &M, ModuleAnalysisManager &AM);
