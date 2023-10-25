@@ -153,6 +153,8 @@ static_library("LLVMX86CodeGen") {
     "X86VZeroUpper.cpp",
     "X86WinEHState.cpp",
     "X86WinEHUnwindV2.cpp",
+    "X86WinFixupBufferSecurityCheck.cpp",
+    "X86IUFrameBufferPass.cpp",
   ]
 }
 
