@@ -56,9 +56,10 @@
 
 using namespace llvm;
 
-static cl::opt<bool> EnableMachineCombinerPass("x86-machine-combiner",
-                               cl::desc("Enable the machine combiner pass"),
-                               cl::init(true), cl::Hidden);
+static cl::opt<bool>
+    EnableMachineCombinerPass("x86-machine-combiner",
+                              cl::desc("Enable the machine combiner pass"),
+                              cl::init(true), cl::Hidden);
 
 static cl::opt<bool>
     EnableTileRAPass("x86-tile-ra",
@@ -98,6 +99,7 @@ extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeX86Target() {
   initializeX86FlagsCopyLoweringPassPass(PR);
   initializeX86LoadValueInjectionLoadHardeningPassPass(PR);
   initializeX86LoadValueInjectionRetHardeningPassPass(PR);
+  initializeX86IUFrameSizePassPass(PR);
   initializeX86OptimizeLEAPassPass(PR);
   initializeX86PartialReductionPass(PR);
   initializePseudoProbeInserterPass(PR);
@@ -391,7 +393,7 @@ namespace {
 class X86PassConfig : public TargetPassConfig {
 public:
   X86PassConfig(X86TargetMachine &TM, PassManagerBase &PM)
-    : TargetPassConfig(TM, PM) {}
+      : TargetPassConfig(TM, PM) {}
 
   X86TargetMachine &getX86TargetMachine() const {
     return getTM<X86TargetMachine>();
@@ -444,10 +446,10 @@ char X86ExecutionDomainFix::ID;
 } // end anonymous namespace
 
 INITIALIZE_PASS_BEGIN(X86ExecutionDomainFix, "x86-execution-domain-fix",
-  "X86 Execution Domain Fix", false, false)
+                      "X86 Execution Domain Fix", false, false)
 INITIALIZE_PASS_DEPENDENCY(ReachingDefAnalysis)
 INITIALIZE_PASS_END(X86ExecutionDomainFix, "x86-execution-domain-fix",
-  "X86 Execution Domain Fix", false, false)
+                    "X86 Execution Domain Fix", false, false)
 
 TargetPassConfig *X86TargetMachine::createPassConfig(PassManagerBase &PM) {
   return new X86PassConfig(*this, PM);
@@ -651,6 +653,7 @@ void X86PassConfig::addPreEmitPass2() {
 
   // Insert pseudo probe annotation for callsite profiling
   addPass(createPseudoProbeInserter());
+  addPass(createX86IUFrameSizePass());
 
   // KCFI indirect call checks are lowered to a bundle, and on Darwin platforms,
   // also CALL_RVMARKER.
