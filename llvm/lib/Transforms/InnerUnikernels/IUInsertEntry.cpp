@@ -46,6 +46,7 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include <sstream>
+#include <stack>
 #include <string>
 
 #include <linux/bpf.h>
@@ -342,29 +343,52 @@ bool IUEntryInsertion::instrumentStack(Module &M, LLVMContext &C) const {
   return true;
 }
 
+/**
+ * @brief Checks if the given CallGraph contains a cycle.
+ *
+ * @param CG The call graph to check for cycles.
+ * @return Returns 'true' if the CallGraph contains a cycle, otherwise 'false'.
+ *
+ */
 bool IUEntryInsertion::containsCycle(CallGraph &CG) const {
-  for (scc_iterator<CallGraph *> I = scc_begin(&CG), E = scc_end(&CG); I != E;
-       ++I) {
-    SmallVector<CallGraphNode *, 64> SCC(I->begin(), I->end());
 
-    // If the SCC has more than one node, it's definitely a cycle.
-    if (SCC.size() > 1) {
-      return true;
+  std::set<CallGraphNode *> VisitedNodes;
+  std::set<CallGraphNode *> NodesInStack;
+  std::stack<CallGraphNode *> DfsStack;
+
+  for (auto &KV : CG) {
+    CallGraphNode *StartNode = KV.second.get();
+
+    if (VisitedNodes.find(StartNode) != VisitedNodes.end()) {
+      continue;
     }
 
-    CallGraphNode *Node = SCC.front();
-    // Even if it's a single-node SCC, it can be a self-cycle.
-    if (Node->size() > 0 && (*Node->begin()).second == Node) {
+    DfsStack.push(StartNode);
 
-      std::string Demangled;
-      nonMicrosoftDemangle(Node->getFunction()->getName().data(), Demangled);
-      // skip if the function is a core function
-      if (StringRef(Demangled).startswith(StringRef("<core::")))
-        continue;
+    while (!DfsStack.empty()) {
+      CallGraphNode *Node = DfsStack.top();
+      DfsStack.pop();
 
-      errs() << "Found SCC condition 2 with Module "
-             << Node->getFunction()->getName() << "\n";
-      return true;
+      if (VisitedNodes.find(Node) == VisitedNodes.end()) {
+        VisitedNodes.insert(Node);
+        NodesInStack.insert(Node);
+
+        for (auto &Neighbor : *Node) {
+          CallGraphNode *Child = Neighbor.second;
+          if (!Child)
+            continue;
+
+          if (NodesInStack.find(Child) != NodesInStack.end()) {
+            return true;
+          }
+
+          if (VisitedNodes.find(Child) == VisitedNodes.end()) {
+            DfsStack.push(Child);
+          }
+        }
+      }
+
+      NodesInStack.erase(Node);
     }
   }
 
