@@ -210,8 +210,6 @@ uint64_t X86IUFrameSizePassMF::getFrameSize(const MachineFunction &MF) {
                 AccumulatedSize += 24;
                 continue;
               }
-              outs() << "Function name: " << Demangled
-                     << " Stack size: " << AccumulatedSize << "\n";
 
               WorkList.push({MFCalled, AccumulatedSize});
             }
