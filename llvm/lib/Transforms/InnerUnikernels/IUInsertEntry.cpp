@@ -365,15 +365,23 @@ bool IUEntryInsertion::containsCycle(CallGraph &CG) const {
   for (auto &KV : CG) {
     CallGraphNode *StartNode = KV.second.get();
 
-    if (VisitedNodes.find(StartNode) != VisitedNodes.end()) {
+    if (VisitedNodes.find(StartNode) != VisitedNodes.end())
       continue;
-    }
 
     DfsStack.push(StartNode);
 
     while (!DfsStack.empty()) {
       CallGraphNode *Node = DfsStack.top();
       DfsStack.pop();
+
+      if (Node->getFunction()) {
+        std::string Demangled;
+        nonMicrosoftDemangle(Node->getFunction()->getName().data(), Demangled);
+        // skip if the function is a core function
+        if (StringRef(Demangled).startswith(StringRef("<core::")) ||
+            StringRef(Demangled).startswith(StringRef("core::")))
+          continue;
+      }
 
       if (VisitedNodes.find(Node) == VisitedNodes.end()) {
         VisitedNodes.insert(Node);
@@ -384,13 +392,11 @@ bool IUEntryInsertion::containsCycle(CallGraph &CG) const {
           if (!Child)
             continue;
 
-          if (NodesInStack.find(Child) != NodesInStack.end()) {
+          if (NodesInStack.find(Child) != NodesInStack.end())
             return true;
-          }
 
-          if (VisitedNodes.find(Child) == VisitedNodes.end()) {
+          if (VisitedNodes.find(Child) == VisitedNodes.end())
             DfsStack.push(Child);
-          }
         }
       }
 
