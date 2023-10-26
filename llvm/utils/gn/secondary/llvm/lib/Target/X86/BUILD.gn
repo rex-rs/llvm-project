@@ -155,6 +155,7 @@ static_library("LLVMX86CodeGen") {
     "X86WinEHUnwindV2.cpp",
     "X86WinFixupBufferSecurityCheck.cpp",
     "X86IUFrameBufferPass.cpp",
+    "X86IUFrameSize.cpp",
   ]
 }
 
