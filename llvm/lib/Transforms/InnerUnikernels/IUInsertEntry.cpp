@@ -318,7 +318,13 @@ bool IUEntryInsertion::instrumentStack(Module &M, LLVMContext &C) const {
     }
   }
 
-  if (!HasIndirect || WorkList.empty())
+  // No need to instrument if there is no call function
+  if (WorkList.empty())
+    return false;
+
+  // No need to instrument if there is no indirect call and no recursion
+  // will calculate the frame size in backend pass IUFrameSizePass
+  if (!HasIndirect && !Recursive)
     return false;
 
   // Add metadata to backend pass
@@ -398,7 +404,6 @@ bool IUEntryInsertion::containsCycle(CallGraph &CG) const {
 /// Wrapper for the new pass manager
 PreservedAnalyses IUEntryInsertion::run(Module &M, ModuleAnalysisManager &AM) {
   // Run entry insertion pass
-  bool Changed = runOnModule(M);
   CallGraph &CG = AM.getResult<CallGraphAnalysis>(M);
   Recursive = containsCycle(CG);
 
@@ -410,6 +415,8 @@ PreservedAnalyses IUEntryInsertion::run(Module &M, ModuleAnalysisManager &AM) {
     MDNode *Node = MDNode::get(Context, Str);
     NamedMD->addOperand(Node);
   }
+
+  bool Changed = runOnModule(M);
 
   // Invalidate all analysis if any new code has been added
   return Changed ? PreservedAnalyses::none() : PreservedAnalyses::all();
