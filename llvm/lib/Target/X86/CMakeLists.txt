@@ -89,7 +89,7 @@ set(sources
   GISel/X86InstructionSelector.cpp
   GISel/X86LegalizerInfo.cpp
   GISel/X86RegisterBankInfo.cpp
-  X86IUFrameBuffer.cpp
+  X86IUFrameSize.cpp
   )
 
 add_llvm_target(X86CodeGen ${sources}
