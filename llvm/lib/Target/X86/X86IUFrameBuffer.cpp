@@ -1,6 +1,7 @@
 #include "X86.h"
 #include "X86InstrBuilder.h"
 #include "X86Subtarget.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
@@ -21,6 +22,7 @@
 #include "llvm/Transforms/InnerUnikernels/IUInsertEntry.h"
 #include <bitset>
 #include <cstdint>
+#include <stack>
 #include <unordered_set>
 
 using namespace llvm;
@@ -159,37 +161,60 @@ void X86IUFrameSizePassMF::runOnMachineFunction(MachineFunction &MF) {
 
 uint64_t X86IUFrameSizePassMF::getFrameSize(const MachineFunction &MF) {
 
-  uint64_t FrameSize = MF.getFrameInfo().getStackSize();
-  uint64_t MaxFrameSize = FrameSize;
+  using FrameSizeEntry = std::pair<const MachineFunction *, uint64_t>;
 
-  for (auto &MBB : MF) {
-    for (auto &MI : MBB) {
-      if (MI.isCall()) {
-        // Handle the call instruction
-        for (auto &MO : MI.operands()) {
-          if (!MO.isGlobal())
-            continue;
+  std::stack<FrameSizeEntry, SmallVector<FrameSizeEntry, 32>> WorkList;
 
-          if (const Function *CalledFunction =
-                  dyn_cast<Function>(MO.getGlobal())) {
-            MachineFunction *MFCalled =
-                MMI->getMachineFunction(*CalledFunction);
+  WorkList.push({&MF, MF.getFrameInfo().getStackSize()});
 
-            // skip if the function is nullptr
-            if (!MFCalled) {
+  uint64_t MaxFrameSize = 0;
+
+  while (!WorkList.empty()) {
+    FrameSizeEntry CurrentEntry = WorkList.top();
+    WorkList.pop();
+
+    const MachineFunction *CurrentMF = CurrentEntry.first;
+    uint64_t AccumulatedSize = CurrentEntry.second;
+
+    uint64_t CurrFrameSize = CurrentMF->getFrameInfo().getStackSize();
+    AccumulatedSize += CurrFrameSize;
+    MaxFrameSize = std::max(MaxFrameSize, AccumulatedSize);
+
+    // skip if the stack size is too large
+    if (MaxFrameSize > FrameSizeLimit)
+      return MaxFrameSize;
+
+    for (auto &MBB : *CurrentMF) {
+      for (auto &MI : MBB) {
+        if (MI.isCall()) {
+          // Handle the call instruction
+          for (auto &MO : MI.operands()) {
+            if (!MO.isGlobal())
               continue;
-            }
 
-            std::string Demangled;
-            nonMicrosoftDemangle(CalledFunction->getName().data(), Demangled);
-            // skip if the function is a core function
-            if (StringRef(Demangled).startswith(StringRef("<core::"))) {
-              MaxFrameSize = std::max(MaxFrameSize, FrameSize + 24);
-              continue;
-            }
+            if (const Function *CalledFunction =
+                    dyn_cast<Function>(MO.getGlobal())) {
+              MachineFunction *MFCalled =
+                  MMI->getMachineFunction(*CalledFunction);
 
-            uint64_t CalledFrameSize = getFrameSize(*MFCalled);
-            MaxFrameSize = std::max(MaxFrameSize, CalledFrameSize + FrameSize);
+              // skip if the function is nullptr
+              if (!MFCalled) {
+                continue;
+              }
+
+              std::string Demangled;
+              nonMicrosoftDemangle(CalledFunction->getName().data(), Demangled);
+              // skip if the function is a core function
+              if (StringRef(Demangled).startswith(StringRef("<core::")) ||
+                  StringRef(Demangled).startswith(StringRef("core::"))) {
+                AccumulatedSize += 24;
+                continue;
+              }
+              outs() << "Function name: " << Demangled
+                     << " Stack size: " << AccumulatedSize << "\n";
+
+              WorkList.push({MFCalled, AccumulatedSize});
+            }
           }
         }
       }
