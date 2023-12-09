@@ -1,36 +1,30 @@
 #include "X86.h"
-#include "X86InstrBuilder.h"
 #include "X86Subtarget.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
+#include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
-#include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/Demangle/Demangle.h"
 #include "llvm/IR/Function.h"
-#include "llvm/IR/IntrinsicsX86.h"
 #include "llvm/IR/Module.h"
-#include "llvm/InitializePasses.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetMachine.h"
-#include "llvm/Transforms/InnerUnikernels/IUInsertEntry.h"
-#include <bitset>
+
 #include <cstdint>
 #include <stack>
-#include <unordered_set>
 
 using namespace llvm;
 
 #define X86IUFrameSizePassName "X86 frame buffer size check"
 #define PASS_KEY "x86-frame-buffer-size"
 #define DEBUG_TYPE PASS_KEY
-#define FrameSizeLimit 0x2000
 
 namespace {
 
@@ -44,6 +38,10 @@ private:
   Module *M;
   MachineModuleInfo *MMI;
   uint64_t getFrameSize(const MachineFunction &MF);
+
+  /// We can give the program 1 extra page nominally when the total stack depth
+  /// can be statically calculated
+  static constexpr uint64_t FrameSizeLimit = (0x1000UL << 2) - 0x1000;
 };
 
 class X86IUFrameSizePass : public ModulePass {
