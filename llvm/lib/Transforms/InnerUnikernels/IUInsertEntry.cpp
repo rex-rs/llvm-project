@@ -17,12 +17,10 @@
 
 #include "llvm/Transforms/InnerUnikernels/IUInsertEntry.h"
 #include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/GraphTraits.h"
 #include "llvm/ADT/SCCIterator.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/ADT/StringSet.h"
 #include "llvm/Analysis/CallGraph.h"
 #include "llvm/Analysis/CallGraphSCCPass.h"
 #include "llvm/Demangle/Demangle.h"
@@ -46,7 +44,6 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include <sstream>
-#include <stack>
 #include <string>
 
 #include <linux/bpf.h>
@@ -349,69 +346,20 @@ bool IUEntryInsertion::instrumentStack(Module &M, LLVMContext &C) const {
   return true;
 }
 
-/**
- * @brief Checks if the given CallGraph contains a cycle.
- *
- * @param CG The call graph to check for cycles.
- * @return Returns 'true' if the CallGraph contains a cycle, otherwise 'false'.
- *
- */
-bool IUEntryInsertion::containsCycle(CallGraph &CG) const {
-
-  std::set<CallGraphNode *> VisitedNodes;
-  std::set<CallGraphNode *> NodesInStack;
-  std::stack<CallGraphNode *> DfsStack;
-
-  for (auto &KV : CG) {
-    CallGraphNode *StartNode = KV.second.get();
-
-    if (VisitedNodes.find(StartNode) != VisitedNodes.end())
-      continue;
-
-    DfsStack.push(StartNode);
-
-    while (!DfsStack.empty()) {
-      CallGraphNode *Node = DfsStack.top();
-      DfsStack.pop();
-
-      if (Node->getFunction()) {
-        std::string Demangled;
-        nonMicrosoftDemangle(Node->getFunction()->getName().data(), Demangled);
-        // skip if the function is a core function
-        if (StringRef(Demangled).startswith(StringRef("<core::")) ||
-            StringRef(Demangled).startswith(StringRef("core::")))
-          continue;
-      }
-
-      if (VisitedNodes.find(Node) == VisitedNodes.end()) {
-        VisitedNodes.insert(Node);
-        NodesInStack.insert(Node);
-
-        for (auto &Neighbor : *Node) {
-          CallGraphNode *Child = Neighbor.second;
-          if (!Child)
-            continue;
-
-          if (NodesInStack.find(Child) != NodesInStack.end())
-            return true;
-
-          if (VisitedNodes.find(Child) == VisitedNodes.end())
-            DfsStack.push(Child);
-        }
-      }
-
-      NodesInStack.erase(Node);
-    }
-  }
-
-  return false;
-}
-
 /// Wrapper for the new pass manager
 PreservedAnalyses IUEntryInsertion::run(Module &M, ModuleAnalysisManager &AM) {
   // Run entry insertion pass
+  Recursive = false;
   CallGraph &CG = AM.getResult<CallGraphAnalysis>(M);
-  Recursive = containsCycle(CG);
+
+  // Check whether we have a loop somewhere
+  for (scc_iterator<CallGraph *> SCCI = scc_begin(&CG); !SCCI.isAtEnd();
+       ++SCCI) {
+    if (SCCI.hasCycle()) {
+      Recursive = true;
+      break;
+    }
+  }
 
   if (Recursive) {
     errs() << "Found recursive call graph with Module " << M.getName() << "\n";
