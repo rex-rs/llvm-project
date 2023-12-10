@@ -30,13 +30,14 @@ namespace {
 
 class X86IUFrameSizePassMF {
 public:
-  X86IUFrameSizePassMF(Module *M, MachineModuleInfo *MMI) : M(M), MMI(MMI) {}
+  X86IUFrameSizePassMF(const Module *M, const MachineModuleInfo *MMI)
+      : M(M), MMI(MMI) {}
   bool run();
   void runOnMachineFunction(MachineFunction &MF);
 
 private:
-  Module *M;
-  MachineModuleInfo *MMI;
+  const Module *M;
+  const MachineModuleInfo *MMI;
   uint64_t getFrameSize(const MachineFunction &MF);
 
   /// We can give the program 1 extra page nominally when the total stack depth
@@ -58,14 +59,19 @@ public:
   }
 };
 
-} // namespace
-//
+} // end anonymous namespace
+
+char X86IUFrameSizePass::ID = 0;
+
 INITIALIZE_PASS(X86IUFrameSizePass, PASS_KEY, X86IUFrameSizePassName, false,
                 true)
 
-bool X86IUFrameSizePass::runOnModule(Module &M) {
+ModulePass *llvm::createX86IUFrameSizePass() {
+  return new X86IUFrameSizePass();
+}
 
-  MachineModuleInfo *MMI =
+bool X86IUFrameSizePass::runOnModule(Module &M) {
+  const MachineModuleInfo *MMI =
       &getAnalysis<MachineModuleInfoWrapperPass>().getMMI();
   return X86IUFrameSizePassMF(&M, MMI).run();
 }
@@ -81,14 +87,13 @@ bool X86IUFrameSizePassMF::run() {
     for (unsigned I = 0, E = IUStackMD->getNumOperands(); I != E; ++I) {
       MDNode *Node = IUStackMD->getOperand(I);
       if (MDString *Str = dyn_cast<MDString>(Node->getOperand(0))) {
-
         StringRef Value = Str->getString();
 
         // skip pass with recursion
-        if (Value.equals("iu-recursion"))
+        if (Value == "iu-recursion")
           Failed |= true;
 
-        if (Value.equals("iu-indirect-call"))
+        if (Value == "iu-indirect-call")
           Failed |= true;
       }
     }
@@ -141,15 +146,13 @@ bool X86IUFrameSizePassMF::run() {
   return false;
 }
 
-char X86IUFrameSizePass::ID = 0;
 void X86IUFrameSizePassMF::runOnMachineFunction(MachineFunction &MF) {
-
-  std::string ErrMsg;
-  raw_string_ostream OS(ErrMsg);
-
   uint64_t FrameSize = getFrameSize(MF);
   if (FrameSize > FrameSizeLimit) {
+    std::string ErrMsg;
+    raw_string_ostream OS(ErrMsg);
     std::string Demangled;
+
     nonMicrosoftDemangle(MF.getName().data(), Demangled);
     OS << "Frame size is too large: " << FrameSize
        << " with function: " << Demangled << "\n";
@@ -217,8 +220,4 @@ uint64_t X86IUFrameSizePassMF::getFrameSize(const MachineFunction &MF) {
     }
   }
   return MaxFrameSize;
-}
-
-ModulePass *llvm::createX86IUFrameSizePass() {
-  return new X86IUFrameSizePass();
 }
