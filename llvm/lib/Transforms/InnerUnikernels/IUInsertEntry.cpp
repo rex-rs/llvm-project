@@ -130,26 +130,11 @@ AttributeList IUEntryInsertion::getIUFnAttr(LLVMContext &C) const {
 
   // SIMD extensions are not allowed in the kernel
   std::stringstream TargetFeatureSs;
-  TargetFeatureSs << "-avx,"
-                  << "-avx2,"
-                  << "-sse,"
-                  << "-sse2,"
-                  << "-sse3,"
-                  << "-sse4.1,"
-                  << "-sse4.2,"
-                  << "-crc32,"
-                  << "-sse4a,"
-                  << "-ssse3,"
-                  << "-avx,"
-                  << "-avx2,"
-                  << "-sse,"
-                  << "-sse2,"
-                  << "-sse3,"
-                  << "-sse4.1,"
-                  << "-sse4.2,"
-                  << "-crc32,"
-                  << "-sse4a,"
-                  << "-ssse3";
+  TargetFeatureSs << "-avx," << "-avx2," << "-sse," << "-sse2," << "-sse3,"
+                  << "-sse4.1," << "-sse4.2," << "-crc32," << "-sse4a,"
+                  << "-ssse3," << "-avx," << "-avx2," << "-sse," << "-sse2,"
+                  << "-sse3," << "-sse4.1," << "-sse4.2," << "-crc32,"
+                  << "-sse4a," << "-ssse3";
 
   // Other needed attributes, e.g. kernel does not have redzone
   AttributeList AS;
