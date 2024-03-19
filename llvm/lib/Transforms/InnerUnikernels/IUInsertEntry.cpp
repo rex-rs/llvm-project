@@ -42,6 +42,7 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Transforms/Utils/ModuleUtils.h"
 
 #include <sstream>
 #include <string>
@@ -162,45 +163,12 @@ AttributeList IUEntryInsertion::getIUFnAttr(LLVMContext &C) const {
   return AS;
 }
 
-/// Mark the Variables (i.e. inserted functions and iu-prog objects) as
-/// used as these symbols are typically considered as dead code during the
-/// linking stage if the '--gc-sections' option is supplied to the linker.
-/// Marking the symbols as used would add the 'SHF_GNU_RETAIN' flag and
-/// prevent the linker from stripping them away.
-/// See also TargetLoweringObjectFileELF::getExplicitSectionGlobal and
-/// collectUsedGlobalVariables
-void IUEntryInsertion::markUsedGlobalVariables(Module &M,
-                                               ArrayRef<Constant *> Vec) const {
-  LLVMContext &C = M.getContext();
-  const char *UsedName = "llvm.used";
-
-  // Create initializer for @llvm.used
-  PointerType *UsedInitElemTy = Type::getInt8Ty(C)->getPointerTo();
-  ArrayType *UsedInitArrayTy = ArrayType::get(UsedInitElemTy, Vec.size());
-  Constant *UsedInit = ConstantArray::get(UsedInitArrayTy, Vec);
-
-  // FIXME: Do not handle existing @llvm.used for now
-  assert(!M.getNamedValue(UsedName) && "@llvm.used exists!");
-
-  // Create @llvm.used in the module with initializer
-  Constant *UsedConst = M.getOrInsertGlobal(UsedName, UsedInitArrayTy, [&] {
-    return new GlobalVariable(M, UsedInitArrayTy, false,
-                              GlobalVariable::AppendingLinkage, UsedInit,
-                              UsedName);
-  });
-
-  // Set section
-  auto *UsedGV = cast<GlobalVariable>(UsedConst);
-  UsedGV->setSection("llvm.metadata");
-}
-
 /// Entry point of the pass, it looks at all the global variables to identify
 /// the inner-unikernel program variables
 bool IUEntryInsertion::runOnModule(Module &M) const {
   bool Changed = false; // Whether transformation is actually made
   LLVMContext &C = M.getContext();
-  SmallVector<Constant *, 8> UsedGV;
-  PointerType *Int8PtrTy = Type::getInt8Ty(C)->getPointerTo();
+  SmallVector<GlobalValue *, 8> UsedGV;
 
   // Perform stack depth instrumentation
   Changed |= instrumentStack(M, C);
@@ -281,18 +249,22 @@ bool IUEntryInsertion::runOnModule(Module &M) const {
 
       // Add the function using the extracted information above
       Function *EntryFunc = insertEntry(M, ProgRun, &G, CtxPT, ProgName, RTTI);
-      Constant *EntryFuncInt8Ptr =
-          ConstantExpr::getBitCast(EntryFunc, Int8PtrTy);
-      UsedGV.push_back(EntryFuncInt8Ptr);
+      UsedGV.push_back(EntryFunc);
 
       // Transformation made
       Changed = true;
     }
   }
 
-  // Mark the inserted symbols as used
+  // Mark the Variables (i.e. inserted functions and iu-prog objects) as
+  // used as these symbols are typically considered as dead code during the
+  // linking stage if the '--gc-sections' option is supplied to the linker.
+  // Marking the symbols as used would add the 'SHF_GNU_RETAIN' flag and
+  // prevent the linker from stripping them away.
+  // See also TargetLoweringObjectFileELF::getExplicitSectionGlobal and
+  // collectUsedGlobalVariables
   if (Changed)
-    markUsedGlobalVariables(M, UsedGV);
+    appendToUsed(M, UsedGV);
 
   return Changed;
 }
