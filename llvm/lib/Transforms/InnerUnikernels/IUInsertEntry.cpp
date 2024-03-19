@@ -241,6 +241,14 @@ bool IUEntryInsertion::runOnModule(Module &M) const {
     }
   }
 
+  // Make sure the timeout handler is always in the final executable
+  // Rust uses void return type for noreturn (i.e. the "!" return type)
+  FunctionType *TimeoutHandlerTy =
+      FunctionType::get(Type::getVoidTy(C), {}, false);
+  FunctionCallee TimeoutHandler = M.getOrInsertFunction(
+      "__iu_handle_timeout", TimeoutHandlerTy, getIUFnAttr(C));
+  UsedGV.push_back(cast<Function>(TimeoutHandler.getCallee()));
+
   // Mark the Variables (i.e. inserted functions and iu-prog objects) as
   // used as these symbols are typically considered as dead code during the
   // linking stage if the '--gc-sections' option is supplied to the linker.
