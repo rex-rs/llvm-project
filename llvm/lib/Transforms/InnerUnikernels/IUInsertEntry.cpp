@@ -242,12 +242,7 @@ bool IUEntryInsertion::runOnModule(Module &M) const {
   }
 
   // Make sure the timeout handler is always in the final executable
-  // Rust uses void return type for noreturn (i.e. the "!" return type)
-  FunctionType *TimeoutHandlerTy =
-      FunctionType::get(Type::getVoidTy(C), {}, false);
-  FunctionCallee TimeoutHandler = M.getOrInsertFunction(
-      "__iu_handle_timeout", TimeoutHandlerTy, getIUFnAttr(C));
-  UsedGV.push_back(cast<Function>(TimeoutHandler.getCallee()));
+  UsedGV.push_back(createTimeoutHandler(M, C));
 
   // Mark the Variables (i.e. inserted functions and iu-prog objects) as
   // used as these symbols are typically considered as dead code during the
@@ -309,6 +304,32 @@ bool IUEntryInsertion::instrumentStack(Module &M, LLVMContext &C) const {
   }
 
   return true;
+}
+
+Function *IUEntryInsertion::createTimeoutHandler(Module &M,
+                                                 LLVMContext &C) const {
+  // Rust uses void return type for noreturn (i.e. the "!" return type)
+  FunctionType *TimeoutHandlerTy =
+      FunctionType::get(Type::getVoidTy(C), {}, false);
+  FunctionCallee TimeoutHandlerInner = M.getOrInsertFunction(
+      "__iu_handle_timeout", TimeoutHandlerTy, getIUFnAttr(C));
+
+  Function *TimeoutHandler =
+      cast<Function>(M.getOrInsertFunction("iu_handle_timeout",
+                                           TimeoutHandlerTy, getIUFnAttr(C))
+                         .getCallee());
+
+  // Construct function body, starting with entry BB
+  BasicBlock *EntryBB = BasicBlock::Create(C, "start", TimeoutHandler);
+  IRBuilder<> InstBuilder(EntryBB);
+
+  // Construct call to __iu_handle_timeout
+  InstBuilder.CreateCall(TimeoutHandlerInner.getFunctionType(),
+                         TimeoutHandlerInner.getCallee(), {});
+
+  InstBuilder.CreateRetVoid();
+
+  return TimeoutHandler;
 }
 
 /// Wrapper for the new pass manager
