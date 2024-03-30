@@ -36,6 +36,7 @@ class IUEntryInsertion : public PassInfoMixin<IUEntryInsertion> {
   void validateAndFinalizeSection(Function *EntryFn, GlobalVariable *ProgObj,
                                   unsigned ProgType) const;
   bool instrumentStack(Module &M, LLVMContext &C) const;
+  Function *createTimeoutHandler(Module &M, LLVMContext &C) const;
   bool Recursive;
 
 public:
