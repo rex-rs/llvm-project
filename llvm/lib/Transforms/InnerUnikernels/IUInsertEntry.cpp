@@ -314,10 +314,10 @@ Function *IUEntryInsertion::createTimeoutHandler(Module &M,
   FunctionCallee TimeoutHandlerInner = M.getOrInsertFunction(
       "__iu_handle_timeout", TimeoutHandlerTy, getIUFnAttr(C));
 
-  Function *TimeoutHandler =
-      cast<Function>(M.getOrInsertFunction("iu_handle_timeout",
-                                           TimeoutHandlerTy, getIUFnAttr(C))
-                         .getCallee());
+  Function *TimeoutHandler = cast<Function>(
+      M.getOrInsertFunction(M.getName().str() + "_iu_handle_timeout",
+                            TimeoutHandlerTy, getIUFnAttr(C))
+          .getCallee());
 
   // Construct function body, starting with entry BB
   BasicBlock *EntryBB = BasicBlock::Create(C, "start", TimeoutHandler);
