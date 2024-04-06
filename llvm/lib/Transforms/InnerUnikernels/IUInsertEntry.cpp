@@ -31,6 +31,7 @@
 #include "llvm/IR/GlobalValue.h"
 #include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/InlineAsm.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instruction.h"
@@ -269,6 +270,15 @@ bool IUEntryInsertion::instrumentStack(Module &M, LLVMContext &C) const {
       continue;
     for (auto &I : instructions(F)) {
       if (auto *CI = dyn_cast<CallBase>(&I)) {
+        Value *V = CI->getCalledOperand();
+        // Ignore inline asm and intrinsics
+        if (isa<InlineAsm>(V))
+          continue;
+        if (auto *F = dyn_cast<Function>(V)) {
+          if (F->isIntrinsic())
+            continue;
+        }
+
         HasIndirect |= CI->isIndirectCall();
         WorkList.push_back(CI);
       }
