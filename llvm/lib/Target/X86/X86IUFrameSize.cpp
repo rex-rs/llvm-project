@@ -206,8 +206,8 @@ uint64_t X86IUFrameSizePassMF::getFrameSize(const MachineFunction &MF) {
               std::string Demangled;
               nonMicrosoftDemangle(CalledFunction->getName().data(), Demangled);
               // skip if the function is a core function
-              if (StringRef(Demangled).startswith(StringRef("<core::")) ||
-                  StringRef(Demangled).startswith(StringRef("core::"))) {
+              if (StringRef(Demangled).starts_with(StringRef("<core::")) ||
+                  StringRef(Demangled).starts_with(StringRef("core::"))) {
                 AccumulatedSize += 24;
                 continue;
               }
