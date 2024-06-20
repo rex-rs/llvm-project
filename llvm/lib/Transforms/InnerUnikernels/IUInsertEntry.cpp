@@ -68,13 +68,13 @@ void IUEntryInsertion::validateAndFinalizeSection(Function *EntryFn,
 #define IU_PROG_TYPE_1(ty_enum, ty_name, sec)                                  \
   case ty_enum:                                                                \
     ProgObj->setSection("obj" #ty_name);                                       \
-    assert(EntryFn->getSection().startswith(sec) && "invalid section name");   \
+    assert(EntryFn->getSection().starts_with(sec) && "invalid section name");  \
     break;
 #define IU_PROG_TYPE_2(ty_enum, ty_name, sec1, sec2)                           \
   case ty_enum:                                                                \
     ProgObj->setSection("obj" #ty_name);                                       \
-    assert((EntryFn->getSection().startswith(sec1) ||                          \
-            EntryFn->getSection().startswith(sec2)) &&                         \
+    assert((EntryFn->getSection().starts_with(sec1) ||                         \
+            EntryFn->getSection().starts_with(sec2)) &&                        \
            "invalid section name");                                            \
     break;
 #include "llvm/Transforms/InnerUnikernels/IUProgType.def"
@@ -165,7 +165,7 @@ bool IUEntryInsertion::runOnModule(Module &M) const {
 
   // Traverse all Global variables
   for (GlobalVariable &G : M.globals()) {
-    if (G.hasSection() && G.getSection().startswith("inner_unikernel")) {
+    if (G.hasSection() && G.getSection().starts_with("inner_unikernel")) {
       Constant *Init = G.getInitializer();
       auto *CS = cast<ConstantStruct>(Init);
 
@@ -266,7 +266,7 @@ bool IUEntryInsertion::instrumentStack(Module &M, LLVMContext &C) const {
   for (auto &F : M) {
     std::string Demangled;
     nonMicrosoftDemangle(F.getName().data(), Demangled);
-    if (StringRef(Demangled).startswith(StringRef("inner_unikernel_rt::")))
+    if (StringRef(Demangled).starts_with(StringRef("inner_unikernel_rt::")))
       continue;
     for (auto &I : instructions(F)) {
       if (auto *CI = dyn_cast<CallBase>(&I)) {
