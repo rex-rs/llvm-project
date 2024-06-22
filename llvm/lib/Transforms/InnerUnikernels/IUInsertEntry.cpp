@@ -41,6 +41,7 @@
 #include "llvm/IRReader/IRReader.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/ErrorOr.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
@@ -170,6 +171,8 @@ bool IUEntryInsertion::runOnModule(Module &M) const {
       auto *CS = cast<ConstantStruct>(Init);
 
       // rtti
+      // Run-Time Type Information (RTTI) is a feature in C++ that allows the
+      // type of an object to be determined during program execution
       Constant *OP0 = CS->getOperand(0);
       auto *OP0Cda = cast<ConstantDataArray>(OP0);
       const char *RawRTTI = OP0Cda->getRawDataValues().data();
@@ -194,13 +197,10 @@ bool IUEntryInsertion::runOnModule(Module &M) const {
 
       // prog_fn
       Constant *OP1 = CS->getOperand(1);
-      auto *OP1CE = cast<ConstantExpr>(OP1);
+      Function *Func = cast<Function>(OP1);
+      FunctionType *FuncType = Func->getFunctionType();
 
-      Type *OP1SrcTy = OP1CE->getOperand(0)->getType();
-      Type *OP1PointeeT = OP1SrcTy->getNonOpaquePointerElementType();
-
-      FunctionType *ProgFuncTy = cast<FunctionType>(OP1PointeeT);
-      Type *ProgSelfTy = ProgFuncTy->getParamType(0);
+      Type *ProgSelfTy = FuncType->getParamType(0);
 
       SmallVector<Type *, 0> CtxTys;
       PointerType *CtxPT = StructType::get(C, CtxTys)->getPointerTo();
@@ -215,10 +215,8 @@ bool IUEntryInsertion::runOnModule(Module &M) const {
 
       // name: &'a str
       Constant *OP2 = CS->getOperand(2);
-      auto *OP2CE = cast<ConstantExpr>(OP2);
 
-      Constant *ProgNameInit =
-          cast<GlobalVariable>(OP2CE->getOperand(0))->getInitializer();
+      Constant *ProgNameInit = cast<GlobalVariable>(OP2)->getInitializer();
       auto *ProgNameStruct = cast<ConstantStruct>(ProgNameInit);
       auto *ProgNameCda =
           cast<ConstantDataArray>(ProgNameStruct->getOperand(0));
@@ -226,7 +224,7 @@ bool IUEntryInsertion::runOnModule(Module &M) const {
                            ProgNameCda->getType()->getNumElements());
 
       // Add inserted program name metadata to backend pass
-      if (auto *FunOP1 = dyn_cast<Function>(OP1CE->getOperand(0))) {
+      if (auto *FunOP1 = dyn_cast<Function>(Func)) {
         StringRef UserProg = FunOP1->getName();
         Metadata *Str = MDString::get(Context, UserProg);
         MDNode *Node = MDNode::get(Context, Str);
