@@ -41,7 +41,6 @@
 #include "llvm/IRReader/IRReader.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/ErrorHandling.h"
-#include "llvm/Support/ErrorOr.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
@@ -224,12 +223,10 @@ bool IUEntryInsertion::runOnModule(Module &M) const {
                            ProgNameCda->getType()->getNumElements());
 
       // Add inserted program name metadata to backend pass
-      if (auto *FunOP1 = dyn_cast<Function>(Func)) {
-        StringRef UserProg = FunOP1->getName();
-        Metadata *Str = MDString::get(Context, UserProg);
-        MDNode *Node = MDNode::get(Context, Str);
-        NamedMD->addOperand(Node);
-      }
+      StringRef UserProg = Func->getName();
+      Metadata *Str = MDString::get(Context, UserProg);
+      MDNode *Node = MDNode::get(Context, Str);
+      NamedMD->addOperand(Node);
 
       // Add the function using the extracted information above
       Function *EntryFunc = insertEntry(M, ProgRun, &G, CtxPT, ProgName, RTTI);
