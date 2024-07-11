@@ -24,7 +24,7 @@ add_llvm_component_library(LLVMPasses
   Coroutines
   HipStdPar
   IPO
-  InnerUnikernels
+  Rex
   InstCombine
   IRPrinter
   ObjCARC
