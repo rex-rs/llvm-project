@@ -1,4 +1,4 @@
-//===- IUInsertEntry.cpp - code to perform entry insertion for IU programs-===//
+//===- RexInsertEntry.cpp - code to perform entry insertion for Rex programs-===//
 //
 // Part of the Inner-Unikernels project, based on the LLVM project under
 // the Apache License v2.0 with LLVM Exceptions.
@@ -8,14 +8,14 @@
 //===----------------------------------------------------------------------===//
 // This file implements the entry code insertion pass for Inner-Unikernels
 // programs. It generates a new function that calls into the __iu_entry_*()
-// functions in the kernel runtime crate for each global IU program
+// functions in the kernel runtime crate for each global Rex program
 // objects. The pass then sets the entry functions as "used" to prevent
 // link-time stripping using @llvm.used, which will automatically set the
 // "SHF_GNU_RETAIN" flag for these symbols.
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/Transforms/InnerUnikernels/IUInsertEntry.h"
+#include "llvm/Transforms/Rex/RexInsertEntry.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SCCIterator.h"
 #include "llvm/ADT/SmallVector.h"
@@ -52,41 +52,41 @@
 
 using namespace llvm;
 
-#define DEBUG_TYPE "iu-entry-insertion"
+#define DEBUG_TYPE "rex-entry-insertion"
 
 STATISTIC(NumInserted, "Number of entry function inserted");
 
 /// Validate program sections, the put the function and program object
 /// into appropriate sections
-void IUEntryInsertion::validateAndFinalizeSection(Function *EntryFn,
+void RexEntryInsertion::validateAndFinalizeSection(Function *EntryFn,
                                                   GlobalVariable *ProgObj,
                                                   unsigned ProgType) const {
   // We want to strip the "inner_unikernel/" prefix
   // strlen("inner_unikernel/") + 1 = 16
   EntryFn->setSection(ProgObj->getSection().substr(16));
   switch (ProgType) {
-#define IU_PROG_TYPE_1(ty_enum, ty_name, sec)                                  \
+#define REX_PROG_TYPE_1(ty_enum, ty_name, sec)                                 \
   case ty_enum:                                                                \
     ProgObj->setSection("obj" #ty_name);                                       \
     assert(EntryFn->getSection().starts_with(sec) && "invalid section name");  \
     break;
-#define IU_PROG_TYPE_2(ty_enum, ty_name, sec1, sec2)                           \
+#define REX_PROG_TYPE_2(ty_enum, ty_name, sec1, sec2)                          \
   case ty_enum:                                                                \
     ProgObj->setSection("obj" #ty_name);                                       \
     assert((EntryFn->getSection().starts_with(sec1) ||                         \
             EntryFn->getSection().starts_with(sec2)) &&                        \
            "invalid section name");                                            \
     break;
-#include "llvm/Transforms/InnerUnikernels/IUProgType.def"
-#undef IU_PROG_TYPE_1
-#undef IU_PROG_TYPE_2
+#include "llvm/Transforms/Rex/RexProgType.def"
+#undef REX_PROG_TYPE_1
+#undef REX_PROG_TYPE_2
   default:
     llvm_unreachable("Unknown prog type");
   }
 }
 
 /// Performs the actual insertion of the new function
-Function *IUEntryInsertion::insertEntry(Module &M, FunctionCallee &ProgRun,
+Function *RexEntryInsertion::insertEntry(Module &M, FunctionCallee &ProgRun,
                                         GlobalVariable *ProgObj, Type *CtxPT,
                                         StringRef Name,
                                         unsigned ProgType) const {
@@ -98,7 +98,7 @@ Function *IUEntryInsertion::insertEntry(Module &M, FunctionCallee &ProgRun,
 
   // Declare the function in module
   FunctionType *EntryTy = FunctionType::get(EntryRetty, EntryArgTys, false);
-  FunctionCallee Entry = M.getOrInsertFunction(Name, EntryTy, getIUFnAttr(C));
+  FunctionCallee Entry = M.getOrInsertFunction(Name, EntryTy, getRexFnAttr(C));
 
   // Setup attributes
   Function *EntryFn = cast<Function>(Entry.getCallee());
@@ -126,8 +126,8 @@ Function *IUEntryInsertion::insertEntry(Module &M, FunctionCallee &ProgRun,
   return EntryFn;
 }
 
-/// Sets all the needed attribute for the Rust IU programs
-AttributeList IUEntryInsertion::getIUFnAttr(LLVMContext &C) const {
+/// Sets all the needed attribute for the Rust Rex programs
+AttributeList RexEntryInsertion::getRexFnAttr(LLVMContext &C) const {
 
   // SIMD extensions are not allowed in the kernel
   std::stringstream TargetFeatureSs;
@@ -151,7 +151,7 @@ AttributeList IUEntryInsertion::getIUFnAttr(LLVMContext &C) const {
 
 /// Entry point of the pass, it looks at all the global variables to identify
 /// the inner-unikernel program variables
-bool IUEntryInsertion::runOnModule(Module &M) const {
+bool RexEntryInsertion::runOnModule(Module &M) const {
   bool Changed = false; // Whether transformation is actually made
   LLVMContext &C = M.getContext();
   SmallVector<GlobalValue *, 8> UsedGV;
@@ -179,17 +179,17 @@ bool IUEntryInsertion::runOnModule(Module &M) const {
 
       std::string ProgRunName;
       switch (RTTI) {
-#define IU_PROG_TYPE_1(ty_enum, ty_name, sec)                                  \
+#define REX_PROG_TYPE_1(ty_enum, ty_name, sec)                                 \
   case ty_enum:                                                                \
     ProgRunName = "__iu_entry_" #ty_name;                                      \
     break;
-#define IU_PROG_TYPE_2(ty_enum, ty_name, sec1, sec2)                           \
+#define REX_PROG_TYPE_2(ty_enum, ty_name, sec1, sec2)                          \
   case ty_enum:                                                                \
     ProgRunName = "__iu_entry_" #ty_name;                                      \
     break;
-#include "llvm/Transforms/InnerUnikernels/IUProgType.def"
-#undef IU_PROG_TYPE_1
-#undef IU_PROG_TYPE_2
+#include "llvm/Transforms/Rex/RexProgType.def"
+#undef REX_PROG_TYPE_1
+#undef REX_PROG_TYPE_2
       default:
         errs() << "Unknown RTTI " << RTTI << "\n";
       }
@@ -210,7 +210,7 @@ bool IUEntryInsertion::runOnModule(Module &M) const {
       FunctionType *ProgRunTy =
           FunctionType::get(ProgRunRetty, ProgRunArgTys, false);
       FunctionCallee ProgRun =
-          M.getOrInsertFunction(ProgRunName, ProgRunTy, getIUFnAttr(C));
+          M.getOrInsertFunction(ProgRunName, ProgRunTy, getRexFnAttr(C));
 
       // name: &'a str
       Constant *OP2 = CS->getOperand(2);
@@ -253,7 +253,7 @@ bool IUEntryInsertion::runOnModule(Module &M) const {
   return Changed;
 }
 
-bool IUEntryInsertion::instrumentStack(Module &M, LLVMContext &C) const {
+bool RexEntryInsertion::instrumentStack(Module &M, LLVMContext &C) const {
   SmallVector<Instruction *, 32> WorkList;
   bool HasIndirect = false;
 
@@ -261,7 +261,7 @@ bool IUEntryInsertion::instrumentStack(Module &M, LLVMContext &C) const {
   for (auto &F : M) {
     std::string Demangled;
     nonMicrosoftDemangle(F.getName().data(), Demangled);
-    if (StringRef(Demangled).starts_with(StringRef("inner_unikernel_rt::")))
+    if (StringRef(Demangled).starts_with(StringRef("rex::")))
       continue;
     for (auto &I : instructions(F)) {
       if (auto *CI = dyn_cast<CallBase>(&I)) {
@@ -285,7 +285,7 @@ bool IUEntryInsertion::instrumentStack(Module &M, LLVMContext &C) const {
     return false;
 
   // No need to instrument if there is no indirect call and no recursion
-  // will calculate the frame size in backend pass IUFrameSizePass
+  // will calculate the frame size in backend pass RexFrameSizePass
   if (!HasIndirect && !Recursive)
     return false;
 
@@ -300,7 +300,7 @@ bool IUEntryInsertion::instrumentStack(Module &M, LLVMContext &C) const {
 
   FunctionType *CheckStackTy = FunctionType::get(Type::getVoidTy(C), {}, false);
   FunctionCallee CheckStack =
-      M.getOrInsertFunction("__iu_check_stack", CheckStackTy, getIUFnAttr(C));
+      M.getOrInsertFunction("__iu_check_stack", CheckStackTy, getRexFnAttr(C));
 
   // Add the stack pointer instrumentation
   for (auto *I : WorkList) {
@@ -311,17 +311,17 @@ bool IUEntryInsertion::instrumentStack(Module &M, LLVMContext &C) const {
   return true;
 }
 
-Function *IUEntryInsertion::createTimeoutHandler(Module &M,
+Function *RexEntryInsertion::createTimeoutHandler(Module &M,
                                                  LLVMContext &C) const {
   // Rust uses void return type for noreturn (i.e. the "!" return type)
   FunctionType *TimeoutHandlerTy =
       FunctionType::get(Type::getVoidTy(C), {}, false);
   FunctionCallee TimeoutHandlerInner = M.getOrInsertFunction(
-      "__iu_handle_timeout", TimeoutHandlerTy, getIUFnAttr(C));
+      "__iu_handle_timeout", TimeoutHandlerTy, getRexFnAttr(C));
 
   Function *TimeoutHandler = cast<Function>(
       M.getOrInsertFunction(M.getName().str() + "_iu_handle_timeout",
-                            TimeoutHandlerTy, getIUFnAttr(C))
+                            TimeoutHandlerTy, getRexFnAttr(C))
           .getCallee());
 
   // Construct function body, starting with entry BB
@@ -338,7 +338,7 @@ Function *IUEntryInsertion::createTimeoutHandler(Module &M,
 }
 
 /// Wrapper for the new pass manager
-PreservedAnalyses IUEntryInsertion::run(Module &M, ModuleAnalysisManager &AM) {
+PreservedAnalyses RexEntryInsertion::run(Module &M, ModuleAnalysisManager &AM) {
   // Run entry insertion pass
   Recursive = false;
   CallGraph &CG = AM.getResult<CallGraphAnalysis>(M);
