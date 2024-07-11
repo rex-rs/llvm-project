@@ -1,4 +1,4 @@
-//===- IUInsertEntry.h - IUEntryInsertion pass ------------------*- C++ -*-===//
+//===- RexInsertEntry.h - RexEntryInsertion pass ----------------*- C++ -*-===//
 //
 // Part of the Inner-Unikernels project, based on the LLVM project under
 // the Apache License v2.0 with LLVM Exceptions.
@@ -9,13 +9,13 @@
 /// \file
 ///
 /// This file provides the primary interface to the entry-code-insertion
-/// pass for the Inner-Unikernels project. This pass is suitable for use in
-/// the new pass manager and it does not support the legacy pass manager.
+/// pass for the Rex project. This pass is suitable for use in the new pass
+/// managermanager and it does not support the legacy pass manager.
 ///
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_TRANSFORMS_IUINSERTENTRY_H
-#define LLVM_TRANSFORMS_IUINSERTENTRY_H
+#ifndef LLVM_TRANSFORMS_REXINSERTENTRY_H
+#define LLVM_TRANSFORMS_REXINSERTENTRY_H
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
@@ -26,17 +26,18 @@
 namespace llvm {
 
 /// Pass to insert entry points for inner-unikernel programs
-class IUEntryInsertion : public PassInfoMixin<IUEntryInsertion> {
+class RexEntryInsertion : public PassInfoMixin<RexEntryInsertion> {
   bool runOnModule(Module &M) const;
   Function *insertEntry(Module &M, FunctionCallee &ProgRun,
                         GlobalVariable *ProgObj, Type *CtxPT, StringRef Name,
                         unsigned ProgType) const;
-  AttributeList getIUFnAttr(LLVMContext &C) const;
+  AttributeList getRexFnAttr(LLVMContext &C) const;
   void markUsedGlobalVariables(Module &M, ArrayRef<Constant *> Vec) const;
   void validateAndFinalizeSection(Function *EntryFn, GlobalVariable *ProgObj,
                                   unsigned ProgType) const;
   bool instrumentStack(Module &M, LLVMContext &C) const;
   Function *createTimeoutHandler(Module &M, LLVMContext &C) const;
+
   bool Recursive;
 
 public:
@@ -45,4 +46,4 @@ public:
 
 } // namespace llvm
 
-#endif /* LLVM_TRANSFORMS_IUINSERTENTRY_H */
+#endif /* LLVM_TRANSFORMS_REXINSERTENTRY_H */
