@@ -1784,7 +1784,7 @@ static StringRef getMIMnemonic(const MachineInstr &MI, MCStreamer &Streamer) {
   return Name;
 }
 
-void AsmPrinter::checkStackUsageIU(const MachineFunction &MF) const {
+void AsmPrinter::checkStackUsageRex(const MachineFunction &MF) const {
   unsigned Limit = 0x1000;
   const MachineFrameInfo &FrameInfo = MF.getFrameInfo();
 
@@ -1795,7 +1795,7 @@ void AsmPrinter::checkStackUsageIU(const MachineFunction &MF) const {
       raw_string_ostream OS(ErrMsg);
       OS << "Stack usage exceeded limit of 4096 bytes"
          << " for function " << MF.getName()
-         << " in inner-unikernel module "
+         << " in Rex module "
          << MF.getFunction().getParent()->getName();
     }
     report_fatal_error(StringRef(ErrMsg));
@@ -1805,7 +1805,7 @@ void AsmPrinter::checkStackUsageIU(const MachineFunction &MF) const {
       raw_string_ostream OS(ErrMsg);
       OS << "Stack contains variable sized objects"
          << " for function " << MF.getName()
-         << " in inner-unikernel module "
+         << " in Rex module "
          << MF.getFunction().getParent()->getName();
     }
     report_fatal_error(StringRef(ErrMsg));
@@ -2174,8 +2174,8 @@ void AsmPrinter::emitFunctionBody() {
   emitStackUsage(*MF);
 
   // Check the stack usage for inner-unikernel programs
-  if (MF->getTarget().Options.IUEnabled)
-    checkStackUsageIU(*MF);
+  if (MF->getTarget().Options.RexEnabled)
+    checkStackUsageRex(*MF);
 
   emitPatchableFunctionEntries();
 

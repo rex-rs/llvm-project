@@ -171,7 +171,7 @@ FunctionPass *createX86SpeculativeLoadHardeningPass();
 FunctionPass *createX86SpeculativeExecutionSideEffectSuppression();
 FunctionPass *createX86ArgumentStackSlotPass();
 FunctionPass *createX86SuppressAPXForRelocationPass();
-ModulePass *createX86IUFrameSizePass();
+ModulePass *createX86RexFrameSizePass();
 
 void initializeCompressEVEXPassPass(PassRegistry &);
 void initializeFPSPass(PassRegistry &);
@@ -209,7 +209,7 @@ void initializeX86SpeculativeLoadHardeningPassPass(PassRegistry &);
 void initializeX86TileConfigPass(PassRegistry &);
 void initializeX86SuppressAPXForRelocationPassPass(PassRegistry &);
 void initializeX86WinEHUnwindV2Pass(PassRegistry &);
-void initializeX86IUFrameSizePassPass(PassRegistry &);
+void initializeX86RexFrameSizePassPass(PassRegistry &);
 
 namespace X86AS {
 enum : unsigned {
