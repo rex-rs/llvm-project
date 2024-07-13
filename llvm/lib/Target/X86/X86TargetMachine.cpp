@@ -99,7 +99,7 @@ extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeX86Target() {
   initializeX86FlagsCopyLoweringPassPass(PR);
   initializeX86LoadValueInjectionLoadHardeningPassPass(PR);
   initializeX86LoadValueInjectionRetHardeningPassPass(PR);
-  initializeX86IUFrameSizePassPass(PR);
+  initializeX86RexFrameSizePassPass(PR);
   initializeX86OptimizeLEAPassPass(PR);
   initializeX86PartialReductionPass(PR);
   initializePseudoProbeInserterPass(PR);
@@ -653,7 +653,7 @@ void X86PassConfig::addPreEmitPass2() {
 
   // Insert pseudo probe annotation for callsite profiling
   addPass(createPseudoProbeInserter());
-  addPass(createX86IUFrameSizePass());
+  addPass(createX86RexFrameSizePass());
 
   // KCFI indirect call checks are lowered to a bundle, and on Darwin platforms,
   // also CALL_RVMARKER.
