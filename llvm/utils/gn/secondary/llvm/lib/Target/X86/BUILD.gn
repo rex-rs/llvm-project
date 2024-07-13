@@ -139,7 +139,6 @@ static_library("LLVMX86CodeGen") {
     "X86TileConfig.cpp",
     "X86VZeroUpper.cpp",
     "X86WinEHState.cpp",
-    "X86IUFrameSize.cpp",
   ]
 }
 
