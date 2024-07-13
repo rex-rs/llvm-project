@@ -7,7 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 // This file implements the entry code insertion pass for Inner-Unikernels
-// programs. It generates a new function that calls into the __iu_entry_*()
+// programs. It generates a new function that calls into the __rex_entry_*()
 // functions in the kernel runtime crate for each global Rex program
 // objects. The pass then sets the entry functions as "used" to prevent
 // link-time stripping using @llvm.used, which will automatically set the
@@ -62,8 +62,8 @@ void RexEntryInsertion::validateAndFinalizeSection(Function *EntryFn,
                                                   GlobalVariable *ProgObj,
                                                   unsigned ProgType) const {
   // We want to strip the "inner_unikernel/" prefix
-  // strlen("inner_unikernel/") + 1 = 16
-  EntryFn->setSection(ProgObj->getSection().substr(16));
+  // strlen("rex/") = 4
+  EntryFn->setSection(ProgObj->getSection().substr(4));
   switch (ProgType) {
 #define REX_PROG_TYPE_1(ty_enum, ty_name, sec)                                 \
   case ty_enum:                                                                \
@@ -159,13 +159,13 @@ bool RexEntryInsertion::runOnModule(Module &M) const {
   // Perform stack depth instrumentation
   Changed |= instrumentStack(M, C);
 
-  NamedMDNode *NamedMD = M.getOrInsertNamedMetadata("iu-programs");
+  NamedMDNode *NamedMD = M.getOrInsertNamedMetadata("rex-programs");
 
   LLVMContext &Context = M.getContext();
 
   // Traverse all Global variables
   for (GlobalVariable &G : M.globals()) {
-    if (G.hasSection() && G.getSection().starts_with("inner_unikernel")) {
+    if (G.hasSection() && G.getSection().starts_with("rex")) {
       Constant *Init = G.getInitializer();
       auto *CS = cast<ConstantStruct>(Init);
 
@@ -181,11 +181,11 @@ bool RexEntryInsertion::runOnModule(Module &M) const {
       switch (RTTI) {
 #define REX_PROG_TYPE_1(ty_enum, ty_name, sec)                                 \
   case ty_enum:                                                                \
-    ProgRunName = "__iu_entry_" #ty_name;                                      \
+    ProgRunName = "__rex_entry_" #ty_name;                                     \
     break;
 #define REX_PROG_TYPE_2(ty_enum, ty_name, sec1, sec2)                          \
   case ty_enum:                                                                \
-    ProgRunName = "__iu_entry_" #ty_name;                                      \
+    ProgRunName = "__rex_entry_" #ty_name;                                     \
     break;
 #include "llvm/Transforms/Rex/RexProgType.def"
 #undef REX_PROG_TYPE_1
@@ -240,7 +240,7 @@ bool RexEntryInsertion::runOnModule(Module &M) const {
   // Make sure the timeout handler is always in the final executable
   UsedGV.push_back(createTimeoutHandler(M, C));
 
-  // Mark the Variables (i.e. inserted functions and iu-prog objects) as
+  // Mark the Variables (i.e. inserted functions and rex-prog objects) as
   // used as these symbols are typically considered as dead code during the
   // linking stage if the '--gc-sections' option is supplied to the linker.
   // Marking the symbols as used would add the 'SHF_GNU_RETAIN' flag and
@@ -291,16 +291,16 @@ bool RexEntryInsertion::instrumentStack(Module &M, LLVMContext &C) const {
 
   // Add metadata to backend pass
   if (HasIndirect) {
-    NamedMDNode *NamedMD = M.getOrInsertNamedMetadata("iu-stack");
+    NamedMDNode *NamedMD = M.getOrInsertNamedMetadata("rex-stack");
     LLVMContext &Context = M.getContext();
-    Metadata *Str = MDString::get(Context, "iu-indirect-call");
+    Metadata *Str = MDString::get(Context, "rex-indirect-call");
     MDNode *Node = MDNode::get(Context, Str);
     NamedMD->addOperand(Node);
   }
 
   FunctionType *CheckStackTy = FunctionType::get(Type::getVoidTy(C), {}, false);
   FunctionCallee CheckStack =
-      M.getOrInsertFunction("__iu_check_stack", CheckStackTy, getRexFnAttr(C));
+      M.getOrInsertFunction("__rex_check_stack", CheckStackTy, getRexFnAttr(C));
 
   // Add the stack pointer instrumentation
   for (auto *I : WorkList) {
@@ -317,10 +317,10 @@ Function *RexEntryInsertion::createTimeoutHandler(Module &M,
   FunctionType *TimeoutHandlerTy =
       FunctionType::get(Type::getVoidTy(C), {}, false);
   FunctionCallee TimeoutHandlerInner = M.getOrInsertFunction(
-      "__iu_handle_timeout", TimeoutHandlerTy, getRexFnAttr(C));
+      "__rex_handle_timeout", TimeoutHandlerTy, getRexFnAttr(C));
 
   Function *TimeoutHandler = cast<Function>(
-      M.getOrInsertFunction(M.getName().str() + "_iu_handle_timeout",
+      M.getOrInsertFunction(M.getName().str() + "_rex_handle_timeout",
                             TimeoutHandlerTy, getRexFnAttr(C))
           .getCallee());
 
@@ -328,7 +328,7 @@ Function *RexEntryInsertion::createTimeoutHandler(Module &M,
   BasicBlock *EntryBB = BasicBlock::Create(C, "start", TimeoutHandler);
   IRBuilder<> InstBuilder(EntryBB);
 
-  // Construct call to __iu_handle_timeout
+  // Construct call to __rex_handle_timeout
   InstBuilder.CreateCall(TimeoutHandlerInner.getFunctionType(),
                          TimeoutHandlerInner.getCallee(), {});
 
@@ -354,9 +354,9 @@ PreservedAnalyses RexEntryInsertion::run(Module &M, ModuleAnalysisManager &AM) {
 
   if (Recursive) {
     errs() << "Found recursive call graph with Module " << M.getName() << "\n";
-    NamedMDNode *NamedMD = M.getOrInsertNamedMetadata("iu-stack");
+    NamedMDNode *NamedMD = M.getOrInsertNamedMetadata("rex-stack");
     LLVMContext &Context = M.getContext();
-    Metadata *Str = MDString::get(Context, "iu-recursion");
+    Metadata *Str = MDString::get(Context, "rex-recursion");
     MDNode *Node = MDNode::get(Context, Str);
     NamedMD->addOperand(Node);
   }
