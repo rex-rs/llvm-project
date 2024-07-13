@@ -481,7 +481,7 @@ public:
   /// Emits the PC sections collected from instructions.
   void emitPCSections(const MachineFunction &MF);
 
-  void checkStackUsageIU(const MachineFunction &MF) const;
+  void checkStackUsageRex(const MachineFunction &MF) const;
 
   /// Get the CFISection type for a function.
   CFISection getFunctionCFISectionType(const Function &F) const;

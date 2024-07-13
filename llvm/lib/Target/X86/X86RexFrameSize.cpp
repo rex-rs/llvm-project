@@ -22,15 +22,15 @@
 
 using namespace llvm;
 
-#define X86IUFrameSizePassName "X86 frame buffer size check"
+#define X86RexFrameSizePassName "X86 frame buffer size check"
 #define PASS_KEY "x86-frame-buffer-size"
 #define DEBUG_TYPE PASS_KEY
 
 namespace {
 
-class X86IUFrameSizePassMF {
+class X86RexFrameSizePassMF {
 public:
-  X86IUFrameSizePassMF(const Module *M, const MachineModuleInfo *MMI)
+  X86RexFrameSizePassMF(const Module *M, const MachineModuleInfo *MMI)
       : M(M), MMI(MMI) {}
   bool run();
   void runOnMachineFunction(MachineFunction &MF);
@@ -45,13 +45,13 @@ private:
   static constexpr uint64_t FrameSizeLimit = (0x1000UL << 2) - 0x1000;
 };
 
-class X86IUFrameSizePass : public ModulePass {
+class X86RexFrameSizePass : public ModulePass {
 public:
   static char ID;
 
-  X86IUFrameSizePass() : ModulePass(ID) {}
+  X86RexFrameSizePass() : ModulePass(ID) {}
   bool runOnModule(Module &M) override;
-  StringRef getPassName() const override { return X86IUFrameSizePassName; }
+  StringRef getPassName() const override { return X86RexFrameSizePassName; }
   void getAnalysisUsage(AnalysisUsage &AU) const override {
     AU.addRequired<MachineModuleInfoWrapperPass>();
     AU.setPreservesAll();
@@ -61,39 +61,39 @@ public:
 
 } // end anonymous namespace
 
-char X86IUFrameSizePass::ID = 0;
+char X86RexFrameSizePass::ID = 0;
 
-INITIALIZE_PASS(X86IUFrameSizePass, PASS_KEY, X86IUFrameSizePassName, false,
+INITIALIZE_PASS(X86RexFrameSizePass, PASS_KEY, X86RexFrameSizePassName, false,
                 true)
 
-ModulePass *llvm::createX86IUFrameSizePass() {
-  return new X86IUFrameSizePass();
+ModulePass *llvm::createX86RexFrameSizePass() {
+  return new X86RexFrameSizePass();
 }
 
-bool X86IUFrameSizePass::runOnModule(Module &M) {
+bool X86RexFrameSizePass::runOnModule(Module &M) {
   const MachineModuleInfo *MMI =
       &getAnalysis<MachineModuleInfoWrapperPass>().getMMI();
-  return X86IUFrameSizePassMF(&M, MMI).run();
+  return X86RexFrameSizePassMF(&M, MMI).run();
 }
 
-bool X86IUFrameSizePassMF::run() {
+bool X86RexFrameSizePassMF::run() {
 
   bool Failed = false;
 
-  // check for iu-stack iu-indirect-call and recursion
-  NamedMDNode *IUStackMD = M->getNamedMetadata("iu-stack");
+  // check for rex-stack rex-indirect-call and recursion
+  NamedMDNode *RexStackMD = M->getNamedMetadata("rex-stack");
 
-  if (IUStackMD) {
-    for (unsigned I = 0, E = IUStackMD->getNumOperands(); I != E; ++I) {
-      MDNode *Node = IUStackMD->getOperand(I);
+  if (RexStackMD) {
+    for (unsigned I = 0, E = RexStackMD->getNumOperands(); I != E; ++I) {
+      MDNode *Node = RexStackMD->getOperand(I);
       if (MDString *Str = dyn_cast<MDString>(Node->getOperand(0))) {
         StringRef Value = Str->getString();
 
         // skip pass with recursion
-        if (Value == "iu-recursion")
+        if (Value == "rex-recursion")
           Failed |= true;
 
-        if (Value == "iu-indirect-call")
+        if (Value == "rex-indirect-call")
           Failed |= true;
       }
     }
@@ -104,12 +104,12 @@ bool X86IUFrameSizePassMF::run() {
 
   SmallVector<StringRef, 32> WorkList;
 
-  // get the iu-program function name
-  NamedMDNode *IUProgMD = M->getNamedMetadata("iu-programs");
+  // get the rex-program function name
+  NamedMDNode *RexProgMD = M->getNamedMetadata("rex-programs");
 
-  if (IUProgMD) {
-    for (unsigned I = 0, E = IUProgMD->getNumOperands(); I != E; ++I) {
-      MDNode *Node = IUProgMD->getOperand(I);
+  if (RexProgMD) {
+    for (unsigned I = 0, E = RexProgMD->getNumOperands(); I != E; ++I) {
+      MDNode *Node = RexProgMD->getOperand(I);
       if (MDString *Str = dyn_cast<MDString>(Node->getOperand(0))) {
 
         // add entry function to the worklist
@@ -146,7 +146,7 @@ bool X86IUFrameSizePassMF::run() {
   return false;
 }
 
-void X86IUFrameSizePassMF::runOnMachineFunction(MachineFunction &MF) {
+void X86RexFrameSizePassMF::runOnMachineFunction(MachineFunction &MF) {
   uint64_t FrameSize = getFrameSize(MF);
   if (FrameSize > FrameSizeLimit) {
     std::string ErrMsg;
@@ -160,7 +160,7 @@ void X86IUFrameSizePassMF::runOnMachineFunction(MachineFunction &MF) {
   }
 }
 
-uint64_t X86IUFrameSizePassMF::getFrameSize(const MachineFunction &MF) {
+uint64_t X86RexFrameSizePassMF::getFrameSize(const MachineFunction &MF) {
 
   using FrameSizeEntry = std::pair<const MachineFunction *, uint64_t>;
 
