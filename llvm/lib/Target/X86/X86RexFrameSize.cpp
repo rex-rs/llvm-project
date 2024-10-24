@@ -126,7 +126,7 @@ bool X86RexFrameSizePassMF::run() {
   auto FoundInVec = [&](const SmallVector<StringRef, 32> &Vec,
                         const StringRef &Target) {
     return std::any_of(Vec.begin(), Vec.end(), [&Target](const StringRef &Str) {
-      return Str.equals(Target);
+      return Str == Target;
     });
   };
 
