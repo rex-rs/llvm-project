@@ -30,7 +30,7 @@ class RexEntryInsertion : public PassInfoMixin<RexEntryInsertion> {
   bool runOnModule(Module &M) const;
   Function *insertEntry(Module &M, FunctionCallee &ProgRun,
                         GlobalVariable *ProgObj, Type *CtxPT, StringRef Name,
-                        unsigned ProgType) const;
+                        unsigned ProgType, AttributeList Attrs) const;
   AttributeList getRexFnAttr(LLVMContext &C) const;
   void markUsedGlobalVariables(Module &M, ArrayRef<Constant *> Vec) const;
   void validateAndFinalizeSection(Function *EntryFn, GlobalVariable *ProgObj,
