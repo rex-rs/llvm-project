@@ -1,4 +1,4 @@
-//===- RexInsertEntry.cpp - code to perform entry insertion for Rex programs-===//
+//===- RexInsertEntry.cpp - performs entry insertion for Rex programs -----===//
 //
 // Part of the Inner-Unikernels project, based on the LLVM project under
 // the Apache License v2.0 with LLVM Exceptions.
@@ -59,8 +59,8 @@ STATISTIC(NumInserted, "Number of entry function inserted");
 /// Validate program sections, the put the function and program object
 /// into appropriate sections
 void RexEntryInsertion::validateAndFinalizeSection(Function *EntryFn,
-                                                  GlobalVariable *ProgObj,
-                                                  unsigned ProgType) const {
+                                                   GlobalVariable *ProgObj,
+                                                   unsigned ProgType) const {
   // We want to strip the "inner_unikernel/" prefix
   // strlen("rex/") = 4
   EntryFn->setSection(ProgObj->getSection().substr(4));
@@ -87,9 +87,9 @@ void RexEntryInsertion::validateAndFinalizeSection(Function *EntryFn,
 
 /// Performs the actual insertion of the new function
 Function *RexEntryInsertion::insertEntry(Module &M, FunctionCallee &ProgRun,
-                                        GlobalVariable *ProgObj, Type *CtxPT,
-                                        StringRef Name,
-                                        unsigned ProgType) const {
+                                         GlobalVariable *ProgObj, Type *CtxPT,
+                                         StringRef Name, unsigned ProgType,
+                                         AttributeList Attrs) const {
   LLVMContext &C = M.getContext();
 
   // Argument and return type
@@ -98,7 +98,9 @@ Function *RexEntryInsertion::insertEntry(Module &M, FunctionCallee &ProgRun,
 
   // Declare the function in module
   FunctionType *EntryTy = FunctionType::get(EntryRetty, EntryArgTys, false);
-  FunctionCallee Entry = M.getOrInsertFunction(Name, EntryTy, getRexFnAttr(C));
+  FunctionCallee Entry = M.getOrInsertFunction(
+      Name, EntryTy,
+      AttributeList::get(C, AttributeList::FunctionIndex, Attrs.getFnAttrs()));
 
   // Setup attributes
   Function *EntryFn = cast<Function>(Entry.getCallee());
@@ -145,7 +147,8 @@ AttributeList RexEntryInsertion::getRexFnAttr(LLVMContext &C) const {
            .addFnAttribute(C, "probe-stack", "__rust_probestack")
            .addFnAttribute(C, "target-cpu", "x86-64")
            .addFnAttribute(C, "target-features", TargetFeatureSs.str())
-           .addFnAttribute(C, "tune-cpu", "generic");
+           .addFnAttribute(C, "tune-cpu", "generic")
+           .addFnAttribute(C, "frame-pointer", "all");
   return AS;
 }
 
@@ -209,8 +212,10 @@ bool RexEntryInsertion::runOnModule(Module &M) const {
 
       FunctionType *ProgRunTy =
           FunctionType::get(ProgRunRetty, ProgRunArgTys, false);
-      FunctionCallee ProgRun =
-          M.getOrInsertFunction(ProgRunName, ProgRunTy, getRexFnAttr(C));
+      FunctionCallee ProgRun = M.getOrInsertFunction(
+          ProgRunName, ProgRunTy,
+          AttributeList::get(C, AttributeList::FunctionIndex,
+                             Func->getAttributes().getFnAttrs()));
 
       // name: &'a str
       Constant *OP2 = CS->getOperand(2);
@@ -229,7 +234,8 @@ bool RexEntryInsertion::runOnModule(Module &M) const {
       NamedMD->addOperand(Node);
 
       // Add the function using the extracted information above
-      Function *EntryFunc = insertEntry(M, ProgRun, &G, CtxPT, ProgName, RTTI);
+      Function *EntryFunc = insertEntry(M, ProgRun, &G, CtxPT, ProgName, RTTI,
+                                        Func->getAttributes());
       UsedGV.push_back(EntryFunc);
 
       // Transformation made
@@ -312,7 +318,7 @@ bool RexEntryInsertion::instrumentStack(Module &M, LLVMContext &C) const {
 }
 
 Function *RexEntryInsertion::createTimeoutHandler(Module &M,
-                                                 LLVMContext &C) const {
+                                                  LLVMContext &C) const {
   // Rust uses void return type for noreturn (i.e. the "!" return type)
   FunctionType *TimeoutHandlerTy =
       FunctionType::get(Type::getVoidTy(C), {}, false);
