@@ -166,6 +166,15 @@ bool RexEntryInsertion::runOnModule(Module &M) const {
 
   LLVMContext &Context = M.getContext();
 
+    // FIXME: Temporary code to handle tracepoint programs
+  for (Function &F: M.functions()) {
+    if (F.hasSection() && F.getSection().starts_with("rex")) {
+      F.setSection(F.getSection().substr(4));
+      UsedGV.push_back(&F);
+      Changed = true;
+    }
+  }
+
   // Traverse all Global variables
   for (GlobalVariable &G : M.globals()) {
     if (G.hasSection() && G.getSection().starts_with("rex")) {
