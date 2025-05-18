@@ -230,9 +230,7 @@ bool RexEntryInsertion::runOnModule(Module &M) const {
       Constant *OP2 = CS->getOperand(2);
 
       Constant *ProgNameInit = cast<GlobalVariable>(OP2)->getInitializer();
-      auto *ProgNameStruct = cast<ConstantStruct>(ProgNameInit);
-      auto *ProgNameCda =
-          cast<ConstantDataArray>(ProgNameStruct->getOperand(0));
+      auto *ProgNameCda = cast<ConstantDataArray>(ProgNameInit);
       std::string ProgName(ProgNameCda->getRawDataValues().data(),
                            ProgNameCda->getType()->getNumElements());
 
