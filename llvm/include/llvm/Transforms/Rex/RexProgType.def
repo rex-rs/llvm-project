@@ -1,4 +1,3 @@
-REX_PROG_TYPE_2(BPF_PROG_TYPE_KPROBE, kprobe, "kprobe", "uprobe")
 REX_PROG_TYPE_1(BPF_PROG_TYPE_PERF_EVENT, perf_event, "perf_event")
 REX_PROG_TYPE_1(BPF_PROG_TYPE_XDP, xdp, "xdp")
 REX_PROG_TYPE_2(BPF_PROG_TYPE_SCHED_CLS, sched_cls, "classifier", "tc")
