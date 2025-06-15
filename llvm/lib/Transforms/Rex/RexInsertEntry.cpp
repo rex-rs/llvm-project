@@ -166,7 +166,7 @@ bool RexEntryInsertion::runOnModule(Module &M) const {
 
   LLVMContext &Context = M.getContext();
 
-    // FIXME: Temporary code to handle tracepoint programs
+    // FIXME: Temporary code to handle programs migrated to proc-macros
   for (Function &F: M.functions()) {
     if (F.hasSection() && F.getSection().starts_with("rex")) {
       F.setSection(F.getSection().substr(4));
