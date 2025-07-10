@@ -16,141 +16,23 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Transforms/Rex/RexInsertEntry.h"
-#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SCCIterator.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Analysis/CallGraph.h"
 #include "llvm/Analysis/CallGraphSCCPass.h"
 #include "llvm/Demangle/Demangle.h"
-#include "llvm/IR/Attributes.h"
-#include "llvm/IR/BasicBlock.h"
-#include "llvm/IR/Constants.h"
-#include "llvm/IR/DerivedTypes.h"
-#include "llvm/IR/GlobalValue.h"
-#include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/IRBuilder.h"
-#include "llvm/IR/InlineAsm.h"
 #include "llvm/IR/InstIterator.h"
-#include "llvm/IR/InstrTypes.h"
-#include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
-#include "llvm/IRReader/IRReader.h"
 #include "llvm/Support/Casting.h"
-#include "llvm/Support/ErrorHandling.h"
-#include "llvm/Support/SourceMgr.h"
-#include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
-
-#include <sstream>
-#include <string>
-
-#include <linux/bpf.h>
 
 using namespace llvm;
 
 #define DEBUG_TYPE "rex-entry-insertion"
-
-STATISTIC(NumInserted, "Number of entry function inserted");
-
-/// Validate program sections, the put the function and program object
-/// into appropriate sections
-void RexEntryInsertion::validateAndFinalizeSection(Function *EntryFn,
-                                                   GlobalVariable *ProgObj,
-                                                   unsigned ProgType) const {
-  // We want to strip the "inner_unikernel/" prefix
-  // strlen("rex/") = 4
-  EntryFn->setSection(ProgObj->getSection().substr(4));
-  switch (ProgType) {
-#define REX_PROG_TYPE_1(ty_enum, ty_name, sec)                                 \
-  case ty_enum:                                                                \
-    ProgObj->setSection("obj" #ty_name);                                       \
-    assert(EntryFn->getSection().starts_with(sec) && "invalid section name");  \
-    break;
-#define REX_PROG_TYPE_2(ty_enum, ty_name, sec1, sec2)                          \
-  case ty_enum:                                                                \
-    ProgObj->setSection("obj" #ty_name);                                       \
-    assert((EntryFn->getSection().starts_with(sec1) ||                         \
-            EntryFn->getSection().starts_with(sec2)) &&                        \
-           "invalid section name");                                            \
-    break;
-#include "llvm/Transforms/Rex/RexProgType.def"
-#undef REX_PROG_TYPE_1
-#undef REX_PROG_TYPE_2
-  default:
-    llvm_unreachable("Unknown prog type");
-  }
-}
-
-/// Performs the actual insertion of the new function
-Function *RexEntryInsertion::insertEntry(Module &M, FunctionCallee &ProgRun,
-                                         GlobalVariable *ProgObj, Type *CtxPT,
-                                         StringRef Name, unsigned ProgType,
-                                         AttributeList Attrs) const {
-  LLVMContext &C = M.getContext();
-
-  // Argument and return type
-  IntegerType *EntryRetty = Type::getInt32Ty(C);
-  Type *EntryArgTys[1] = {CtxPT};
-
-  // Declare the function in module
-  FunctionType *EntryTy = FunctionType::get(EntryRetty, EntryArgTys, false);
-  FunctionCallee Entry = M.getOrInsertFunction(
-      Name, EntryTy,
-      AttributeList::get(C, AttributeList::FunctionIndex, Attrs.getFnAttrs()));
-
-  // Setup attributes
-  Function *EntryFn = cast<Function>(Entry.getCallee());
-
-  // Construct function body, starting with entry BB
-  BasicBlock *EntryBB = BasicBlock::Create(C, "start", EntryFn);
-  IRBuilder<> InstBuilder(EntryBB);
-
-  // Bitcast away the packed attribute
-  Type *SelfType = ProgRun.getFunctionType()->getParamType(0);
-  Value *SelfObj = InstBuilder.CreateBitCast(ProgObj, SelfType);
-
-  // Construct call to prog_run
-  Value *ProgRunArgs[2] = {SelfObj, EntryFn->getArg(0)};
-  CallInst *ProgRunCI = InstBuilder.CreateCall(
-      ProgRun.getFunctionType(), ProgRun.getCallee(), ProgRunArgs);
-
-  // Return
-  InstBuilder.CreateRet(ProgRunCI);
-
-  validateAndFinalizeSection(EntryFn, ProgObj, ProgType);
-
-  NumInserted++;
-
-  return EntryFn;
-}
-
-/// Sets all the needed attribute for the Rust Rex programs
-AttributeList RexEntryInsertion::getRexFnAttr(LLVMContext &C) const {
-
-  // SIMD extensions are not allowed in the kernel
-  std::stringstream TargetFeatureSs;
-  TargetFeatureSs << "-avx," << "-avx2," << "-sse," << "-sse2," << "-sse3,"
-                  << "-sse4.1," << "-sse4.2," << "-crc32," << "-sse4a,"
-                  << "-ssse3," << "-avx," << "-avx2," << "-sse," << "-sse2,"
-                  << "-sse3," << "-sse4.1," << "-sse4.2," << "-crc32,"
-                  << "-sse4a," << "-ssse3";
-
-  // Other needed attributes, e.g. kernel does not have redzone
-  AttributeList AS;
-  AS = AS.addFnAttribute(C, Attribute::AttrKind::NoRedZone)
-           .addFnAttribute(C, Attribute::AttrKind::NoUnwind)
-           .addFnAttribute(C, Attribute::AttrKind::NonLazyBind)
-           .addFnAttribute(C, "probe-stack", "__rust_probestack")
-           .addFnAttribute(C, "target-cpu", "x86-64")
-           .addFnAttribute(C, "target-features", TargetFeatureSs.str())
-           .addFnAttribute(C, "tune-cpu", "generic")
-           .addFnAttribute(C, "frame-pointer", "all");
-  return AS;
-}
 
 /// Entry point of the pass, it looks at all the global variables to identify
 /// the inner-unikernel program variables
@@ -164,94 +46,33 @@ bool RexEntryInsertion::runOnModule(Module &M) const {
 
   NamedMDNode *NamedMD = M.getOrInsertNamedMetadata("rex-programs");
 
-  LLVMContext &Context = M.getContext();
-
-    // FIXME: Temporary code to handle programs migrated to proc-macros
-  for (Function &F: M.functions()) {
+  // Process the entry functions created by proc-macro
+  for (Function &F : M.functions()) {
     if (F.hasSection() && F.getSection().starts_with("rex")) {
       F.setSection(F.getSection().substr(4));
+
+      // Add program name metadata to backend pass
+      MDNode *Node = MDNode::get(C, MDString::get(C, F.getName()));
+      NamedMD->addOperand(Node);
+
+      // Add functions to llvm.used
       UsedGV.push_back(&F);
       Changed = true;
     }
   }
 
-  // Traverse all Global variables
-  for (GlobalVariable &G : M.globals()) {
-    if (G.hasSection() && G.getSection().starts_with("rex")) {
-      Constant *Init = G.getInitializer();
-      auto *CS = cast<ConstantStruct>(Init);
-
-      // rtti
-      // Run-Time Type Information (RTTI) is a feature in C++ that allows the
-      // type of an object to be determined during program execution
-      Constant *OP0 = CS->getOperand(0);
-      auto *OP0Cda = cast<ConstantDataArray>(OP0);
-      const char *RawRTTI = OP0Cda->getRawDataValues().data();
-      auto RTTI = *reinterpret_cast<const int *>(RawRTTI);
-
-      std::string ProgRunName;
-      switch (RTTI) {
-#define REX_PROG_TYPE_1(ty_enum, ty_name, sec)                                 \
-  case ty_enum:                                                                \
-    ProgRunName = "__rex_entry_" #ty_name;                                     \
-    break;
-#define REX_PROG_TYPE_2(ty_enum, ty_name, sec1, sec2)                          \
-  case ty_enum:                                                                \
-    ProgRunName = "__rex_entry_" #ty_name;                                     \
-    break;
-#include "llvm/Transforms/Rex/RexProgType.def"
-#undef REX_PROG_TYPE_1
-#undef REX_PROG_TYPE_2
-      default:
-        errs() << "Unknown RTTI " << RTTI << "\n";
-      }
-
-      // prog_fn
-      Constant *OP1 = CS->getOperand(1);
-      Function *Func = cast<Function>(OP1);
-      FunctionType *FuncType = Func->getFunctionType();
-
-      Type *ProgSelfTy = FuncType->getParamType(0);
-
-      SmallVector<Type *, 0> CtxTys;
-      PointerType *CtxPT = StructType::get(C, CtxTys)->getPointerTo();
-
-      Type *ProgRunArgTys[2] = {ProgSelfTy, CtxPT};
-      IntegerType *ProgRunRetty = Type::getInt32Ty(C);
-
-      FunctionType *ProgRunTy =
-          FunctionType::get(ProgRunRetty, ProgRunArgTys, false);
-      FunctionCallee ProgRun = M.getOrInsertFunction(
-          ProgRunName, ProgRunTy,
-          AttributeList::get(C, AttributeList::FunctionIndex,
-                             Func->getAttributes().getFnAttrs()));
-
-      // name: &'a str
-      Constant *OP2 = CS->getOperand(2);
-
-      Constant *ProgNameInit = cast<GlobalVariable>(OP2)->getInitializer();
-      auto *ProgNameCda = cast<ConstantDataArray>(ProgNameInit);
-      std::string ProgName(ProgNameCda->getRawDataValues().data(),
-                           ProgNameCda->getType()->getNumElements());
-
-      // Add inserted program name metadata to backend pass
-      StringRef UserProg = Func->getName();
-      Metadata *Str = MDString::get(Context, UserProg);
-      MDNode *Node = MDNode::get(Context, Str);
-      NamedMD->addOperand(Node);
-
-      // Add the function using the extracted information above
-      Function *EntryFunc = insertEntry(M, ProgRun, &G, CtxPT, ProgName, RTTI,
-                                        Func->getAttributes());
-      UsedGV.push_back(EntryFunc);
-
-      // Transformation made
-      Changed = true;
-    }
-  }
-
-  // Make sure the timeout handler is always in the final executable
-  UsedGV.push_back(createTimeoutHandler(M, C));
+  // Now process the timeout handler -- we need to make sure the timeout handler
+  // is always in the final executable.
+  //
+  // Rust uses void return type for noreturn (i.e. the "!" return type)
+  // Module::getOrInsertFunction should always be able to find the actual
+  // function because lto=true and codegen-unit=1 are always set for compilation
+  // of Rex prgorams
+  FunctionType *TimeoutHandlerTy =
+      FunctionType::get(Type::getVoidTy(C), {}, false);
+  FunctionCallee TimeoutHandler =
+      M.getOrInsertFunction("__rex_handle_timeout", TimeoutHandlerTy);
+  UsedGV.push_back(cast<GlobalValue>(TimeoutHandler.getCallee()));
 
   // Mark the Variables (i.e. inserted functions and rex-prog objects) as
   // used as these symbols are typically considered as dead code during the
@@ -311,9 +132,12 @@ bool RexEntryInsertion::instrumentStack(Module &M, LLVMContext &C) const {
     NamedMD->addOperand(Node);
   }
 
+  // Module::getOrInsertFunction should always be able to find the actual
+  // function because lto=true and codegen-unit=1 are always set for compilation
+  // of Rex prgorams
   FunctionType *CheckStackTy = FunctionType::get(Type::getVoidTy(C), {}, false);
   FunctionCallee CheckStack =
-      M.getOrInsertFunction("__rex_check_stack", CheckStackTy, getRexFnAttr(C));
+      M.getOrInsertFunction("__rex_check_stack", CheckStackTy);
 
   // Add the stack pointer instrumentation
   for (auto *I : WorkList) {
@@ -322,32 +146,6 @@ bool RexEntryInsertion::instrumentStack(Module &M, LLVMContext &C) const {
   }
 
   return true;
-}
-
-Function *RexEntryInsertion::createTimeoutHandler(Module &M,
-                                                  LLVMContext &C) const {
-  // Rust uses void return type for noreturn (i.e. the "!" return type)
-  FunctionType *TimeoutHandlerTy =
-      FunctionType::get(Type::getVoidTy(C), {}, false);
-  FunctionCallee TimeoutHandlerInner = M.getOrInsertFunction(
-      "__rex_handle_timeout", TimeoutHandlerTy, getRexFnAttr(C));
-
-  Function *TimeoutHandler = cast<Function>(
-      M.getOrInsertFunction(M.getName().str() + "_rex_handle_timeout",
-                            TimeoutHandlerTy, getRexFnAttr(C))
-          .getCallee());
-
-  // Construct function body, starting with entry BB
-  BasicBlock *EntryBB = BasicBlock::Create(C, "start", TimeoutHandler);
-  IRBuilder<> InstBuilder(EntryBB);
-
-  // Construct call to __rex_handle_timeout
-  InstBuilder.CreateCall(TimeoutHandlerInner.getFunctionType(),
-                         TimeoutHandlerInner.getCallee(), {});
-
-  InstBuilder.CreateRetVoid();
-
-  return TimeoutHandler;
 }
 
 /// Wrapper for the new pass manager

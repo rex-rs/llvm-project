@@ -17,26 +17,16 @@
 #ifndef LLVM_TRANSFORMS_REXINSERTENTRY_H
 #define LLVM_TRANSFORMS_REXINSERTENTRY_H
 
-#include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/StringRef.h"
-#include "llvm/Analysis/CallGraph.h"
-#include "llvm/IR/Attributes.h"
 #include "llvm/IR/PassManager.h"
 
 namespace llvm {
 
+class LLVMContext;
+
 /// Pass to insert entry points for inner-unikernel programs
 class RexEntryInsertion : public PassInfoMixin<RexEntryInsertion> {
   bool runOnModule(Module &M) const;
-  Function *insertEntry(Module &M, FunctionCallee &ProgRun,
-                        GlobalVariable *ProgObj, Type *CtxPT, StringRef Name,
-                        unsigned ProgType, AttributeList Attrs) const;
-  AttributeList getRexFnAttr(LLVMContext &C) const;
-  void markUsedGlobalVariables(Module &M, ArrayRef<Constant *> Vec) const;
-  void validateAndFinalizeSection(Function *EntryFn, GlobalVariable *ProgObj,
-                                  unsigned ProgType) const;
   bool instrumentStack(Module &M, LLVMContext &C) const;
-  Function *createTimeoutHandler(Module &M, LLVMContext &C) const;
 
   bool Recursive;
 
