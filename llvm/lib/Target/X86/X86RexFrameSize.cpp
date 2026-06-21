@@ -40,9 +40,9 @@ private:
   const MachineModuleInfo *MMI;
   uint64_t getFrameSize(const MachineFunction &MF);
 
-  /// We can give the program 1 extra page nominally when the total stack depth
-  /// can be statically calculated
-  static constexpr uint64_t FrameSizeLimit = (0x1000UL << 2) - 0x1000;
+  /// Now we are reserved 4 pages based on
+  /// https://github.com/rex-rs/rex/blob/f997e03c84b97ce0485e6c09a2534e97a5884d89/rex/src/panic.rs#L147
+  static constexpr uint64_t FrameSizeLimit = 0x1000UL << 2;
 };
 
 class X86RexFrameSizePass : public ModulePass {
